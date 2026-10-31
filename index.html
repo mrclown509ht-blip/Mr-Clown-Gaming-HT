@@ -2824,8 +2824,8 @@
         // Crée un service + un template avec les variables {{to_email}}, {{subject}}, {{message}}
         // puis colle les 3 valeurs ci-dessous. Vide = pas d'email (notifications dans le site seulement).
         // ============================================================
-        const EMAILJS = { serviceId: '', templateId: '', publicKey: '' };
-        const STAFF_EMAILS = ['mrclown509ht@gmail.com', 'mrclown509ht@gmail.com', 'mrclown509ht@gmail.com']; // destinataires des notifications
+        const EMAILJS = { serviceId: 'service_kkmugpk', templateId: '199c41r', publicKey: 'XTjkjURTEBznjTHfE' };
+        const STAFF_EMAILS = ['mrclown509ht@gmail.com']; // destinataires des notifications
         let chatMessages = [];
         let chatThread = null, chatOpen = false, chatLastTs = Date.now();
         let adminEmail = localStorage.getItem('mrclown_admin_email') || '';
@@ -2841,11 +2841,11 @@
             }).catch(() => {}));
         }
         function notifyNewOrder(o) {
-            emailNotify(['mrclown509ht@gmail.com', 'mrclown509ht@gmail.com'], 'Nouvelle commande ' + o.id,
+            emailNotify(['mrclown509ht@gmail.com'], 'Nouvelle commande ' + o.id,
                 `Commande ${o.id} - ${o.items} - ${o.price} - ${orderIdsText(o)} - paiement ${o.payment}. À traiter rapidement !`);
         }
         function notifyNewDeposit(d) {
-            emailNotify(['mrclown509ht@gmail.com', 'mrclown509ht@gmail.com'], 'Nouveau dépôt à valider',
+            emailNotify(['mrclown509ht@gmail.com'], 'Nouveau dépôt à valider',
                 `Dépôt de ${d.amount} G par ${d.user} (${d.userEmail}) - code ${d.txid}. À valider rapidement !`);
         }
 
