@@ -1,0 +1,12 @@
+{
+  "rules": {
+    ".read": false,
+    ".write": false,
+    "mrclown": {
+      "products": { ".read": true },
+      "catalog":  { ".read": true },
+      "games":    { ".read": true },
+      "ranks":    { ".read": true }
+    }
+  }
+}

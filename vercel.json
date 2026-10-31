@@ -1,0 +1,35 @@
+{
+  "functions": {
+    "api/ff-check.js": {
+      "maxDuration": 10
+    },
+    "api/srv.js": {
+      "maxDuration": 30
+    }
+  },
+  "headers": [
+    {
+      "source": "/(.*)",
+      "headers": [
+        {
+          "key": "X-Content-Type-Options",
+          "value": "nosniff"
+        },
+        {
+          "key": "X-Frame-Options",
+          "value": "SAMEORIGIN"
+        },
+        {
+          "key": "Referrer-Policy",
+          "value": "strict-origin-when-cross-origin"
+        }
+      ]
+    }
+  ],
+  "rewrites": [
+    {
+      "source": "/joie-noel",
+      "destination": "/index.html"
+    }
+  ]
+}

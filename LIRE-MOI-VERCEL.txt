@@ -1,0 +1,24 @@
+MR CLOWN TOP UP GAMING — Déploiement sur Vercel
+
+Contenu du dossier :
+- index.html        : le site (page d'accueil)
+- api/ff-check.js   : fonction serveur qui vérifie l'ID Free Fire (aucune clé API requise)
+- vercel.json       : configuration
+
+Installation (sans ligne de commande) :
+1. Créez un compte sur vercel.com (gratuit, plan Hobby).
+2. Cliquez sur "Add New..." > "Project", puis envoyez ce dossier via un dépôt GitHub
+   (ou utilisez "vercel" en ligne de commande depuis ce dossier).
+3. Framework Preset : "Other". Laissez Build Command et Output Directory vides.
+4. Cliquez sur Deploy.
+5. Testez : https://VOTRE-SITE.vercel.app/api/ff-check?id=UID_FREE_FIRE
+
+Important : n'envoyez pas seulement index.html, le dossier "api" est nécessaire
+pour le bouton Vérifier.
+API tierce non officielle : https://api2.nftoken.info (disponibilité non garantie).
+
+Si le bouton Vérifier répond "unavailable" (timeout) :
+- Le service tiers api2.nftoken.info est probablement en panne ou bloque les serveurs de Vercel.
+- Les commandes restent possibles : le gérant contrôle l'ID avant livraison.
+- Pour utiliser un autre service compatible, ajoutez dans Vercel (Settings > Environment Variables)
+  la variable FF_API_BASE avec l'adresse de base du service, puis redéployez.

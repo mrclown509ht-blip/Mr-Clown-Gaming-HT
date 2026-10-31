@@ -1,0 +1,91 @@
+MR CLOWN TOP UP — MISE EN SÉCURITÉ DES COMPTES (serveur avec authentification)
+==============================================================================
+
+CE QUI A CHANGÉ
+- Les comptes, mots de passe, soldes, commandes, dépôts, codes promo et messages ne sont plus
+  dans le navigateur ni dans une base ouverte : ils sont gérés par le serveur (api/srv.js).
+- Les mots de passe sont chiffrés (scrypt). Personne ne peut les relire, pas même vous.
+- Les connexions utilisent un jeton signé (30 jours pour un client, 12 h pour un gérant).
+- Les prix, remises de rang, codes promo, soldes et codes de transaction sont recalculés/vérifiés
+  par le serveur : modifier le site dans le navigateur ne permet plus de payer moins cher.
+- Un client ne reçoit que SES données. Chaque gérant ne reçoit que ce que son rôle autorise.
+- Les comptes gérants (emails + mots de passe) ne sont plus dans le code du site.
+- Une commande Mr Wallet annulée par l'admin est maintenant remboursée automatiquement.
+- Une commande déjà traitée (livrée/annulée) ne peut plus être modifiée.
+
+NOUVEAU DESIGN
+- Palette « Nuit royale » : bleu nuit, violet électrique et or. Polices Outfit + Inter.
+- Accueil réorganisé : bandeau + recherche, accès rapide (Wallet, Commandes, Support, Chaîne WhatsApp),
+  catégories de jeux, promotions (packs en réduction ou avec badge), boutique, « Comment ça marche »,
+  programme de rangs, FAQ, bandeau chaîne WhatsApp et pied de page en colonnes.
+- Les jeux, packs, promotions et rangs affichés viennent de l'admin : rien à modifier dans le code.
+- Pour mettre un pack en avant : ajoutez-lui un badge ou une réduction dans l'admin.
+
+ACCÈS À L'ESPACE ADMIN
+- Il n'y a plus aucun bouton admin sur le site, ni pour les visiteurs ni pour l'admin connecté
+  (le bouton « Joïe Noèl » et le bouton « Console Gérant » ont été supprimés).
+- L'espace admin s'ouvre uniquement avec le lien :  https://VOTRE-SITE.vercel.app/joie-noel
+  (ordinateur uniquement). Gardez ce lien pour vous. Si vous êtes déjà connecté, le lien ouvre
+  directement la console ; sinon il affiche la fenêtre de connexion.
+- Pour changer ce lien : modifiez la valeur ADMIN_PATH dans index.html ET la ligne "rewrites" de vercel.json.
+
+INSTALLATION (dans cet ordre)
+1. FIREBASE — récupérer la clé serveur
+   Console Firebase > Paramètres du projet (roue dentée) > Comptes de service >
+   « Secrets de la base de données » > afficher et copier le secret.
+   (Si cette section n'existe pas : même page > « Générer une nouvelle clé privée » > ouvrez le
+   fichier JSON, copiez tout son contenu : vous l'utiliserez dans la variable FIREBASE_SERVICE_ACCOUNT.)
+
+2. VERCEL — variables d'environnement
+   Projet > Settings > Environment Variables. Ajoutez (environnement Production) :
+     FIREBASE_DB_SECRET        = le secret copié à l'étape 1
+       (ou FIREBASE_SERVICE_ACCOUNT = le contenu du fichier JSON, si vous avez choisi cette option)
+     SESSION_SECRET            = voir A-COLLER-DANS-VERCEL.txt
+     MANAGERS                  = voir A-COLLER-DANS-VERCEL.txt
+     FIREBASE_DB_URL           = https://mr-clown-topup-default-rtdb.firebaseio.com   (facultatif)
+
+3. DÉPLOYER le dossier complet (index.html, dossier api, vercel.json…).
+   Vérification rapide : ouvrez https://VOTRE-SITE.vercel.app/api/srv
+   => doit afficher {"ok":false,"error":"method",...} : le serveur répond.
+   (Ne publiez pas A-COLLER-DANS-VERCEL.txt : il est déjà exclu par .gitignore.)
+
+4. MIGRER LES ANCIENNES DONNÉES (une seule fois)
+   Ouvrez le lien admin (/joie-noel) sur ordinateur et connectez-vous avec le compte ADMINISTRATEUR,
+   section « Sécurité des données » > « 1. Migrer les anciennes données ».
+   Un message indique le nombre de comptes, commandes, dépôts… copiés. Vérifiez la liste des clients,
+   les soldes et les commandes. Les clients gardent le même mot de passe (désormais chiffré).
+   Cette étape peut être relancée sans risque.
+
+5. FERMER LA BASE FIREBASE
+   Console Firebase > Realtime Database > onglet « Règles » > remplacez tout par le contenu du
+   fichier tools/firebase-rules.json > « Publier ».
+   Désormais seul le catalogue (packs, jeux, rangs) est lisible publiquement ; tout le reste est
+   inaccessible sans passer par le serveur.
+
+6. SUPPRIMER LES ANCIENNES DONNÉES PUBLIQUES
+   Admin > « Sécurité des données » > « 2. Supprimer les anciennes données publiques »
+   (tapez SUPPRIMER). À faire seulement après avoir vérifié l'étape 4.
+
+7. CHANGER LES MOTS DE PASSE DES GÉRANTS (important)
+   Les anciens mots de passe étaient visibles dans le code du site : considérez-les comme connus.
+   node tools/hash-password.js "NouveauMotDePasse"   (nécessite Node.js sur un ordinateur)
+   Remplacez le « hash » du gérant dans la variable MANAGERS (Vercel), puis redéployez.
+
+CE QUE VERRONT LES CLIENTS
+- Tous les clients devront se reconnecter une fois (mêmes identifiants).
+- L'historique du chat, les commandes, les soldes et les dépôts sont conservés par la migration (étape 4).
+
+LIMITES À CONNAÎTRE
+- Les notifications email (EmailJS) restent côté site : la clé publique EmailJS est visible, c'est normal
+  pour ce service, mais n'importe qui peut déclencher un email vers l'équipe. Pour aller plus loin,
+  il faudrait déplacer l'envoi dans le serveur.
+- La limitation du nombre de tentatives (connexion, inscription, promo) fonctionne par instance de serveur :
+  elle freine les attaques mais ne remplace pas un service anti-bot.
+- Le catalogue (prix des packs) reste lisible par tous (c'est voulu) ; seul l'admin peut le modifier.
+- L'accès à Firebase via « compte de service » (FIREBASE_SERVICE_ACCOUNT) n'a pas pu être testé ici ;
+  le secret de base de données (FIREBASE_DB_SECRET) est la méthode la plus simple.
+
+EN CAS DE PROBLÈME
+- « Serveur non configuré » : une variable manque dans Vercel (étape 2) ou il faut redéployer après l'avoir ajoutée.
+- Impossible de se connecter en gérant : vérifiez MANAGERS (JSON valide, email en minuscules).
+- Rien n'apparaît après l'étape 5 : le secret de la base (étape 1/2) est incorrect.

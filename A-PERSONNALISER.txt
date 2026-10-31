@@ -1,0 +1,7 @@
+MR CLOWN TOP UP GAMING HT — IL RESTE À FAIRE
+1. Firebase : récupérer le secret de la base (voir SECRETS-A-GARDER-PRIVE.txt).
+2. Vercel : créer le projet, ajouter les 4 variables de SECRETS-A-GARDER-PRIVE.txt, déployer.
+3. Firebase > Realtime Database > Règles : coller tools/firebase-rules.json, publier.
+4. Lien admin : https://VOTRE-SITE.vercel.app/joie-noel (ordinateur).
+5. Facultatif : EmailJS (index.html) et lien admin personnalisé (ADMIN_PATH + vercel.json).
+Pas de migration : la base est neuve.
