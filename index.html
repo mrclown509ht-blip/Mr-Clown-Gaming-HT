@@ -2837,11 +2837,20 @@
 
         function emailNotify(list, subject, message) {
             if (!EMAILJS.serviceId || !EMAILJS.templateId || !EMAILJS.publicKey) return;
-            list.forEach(to => fetch('https://api.emailjs.com/api/v1.0/email/send', {
-                method: 'POST', headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({ service_id: EMAILJS.serviceId, template_id: EMAILJS.templateId, user_id: EMAILJS.publicKey,
-                    template_params: { to_email: to, subject: subject, message: message } })
-            }).catch(() => {}));
+            const tids = EMAILJS.templateId.startsWith('template_') ? [EMAILJS.templateId] : ['template_' + EMAILJS.templateId, EMAILJS.templateId];
+            list.forEach(async to => {
+                for (const tid of tids) {
+                    try {
+                        const r = await fetch('https://api.emailjs.com/api/v1.0/email/send', {
+                            method: 'POST', headers: {'Content-Type': 'application/json'},
+                            body: JSON.stringify({ service_id: EMAILJS.serviceId, template_id: tid, user_id: EMAILJS.publicKey,
+                                template_params: { to_email: to, subject: subject, message: message } })
+                        });
+                        if (r.ok) return;
+                        console.error('EmailJS', r.status, await r.text());
+                    } catch (e) { console.error('EmailJS', e); }
+                }
+            });
         }
         function notifyNewOrder(o) {
             emailNotify(['mrclown509ht@gmail.com'], 'Nouvelle commande ' + o.id,

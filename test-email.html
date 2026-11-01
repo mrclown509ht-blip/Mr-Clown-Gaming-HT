@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Test email</title>
+<style>body{margin:0;padding:24px;background:#07030F;color:#F6F0FF;font:16px/1.5 system-ui,sans-serif}
+button{width:100%;padding:18px;border:0;border-radius:14px;background:#FFD21F;color:#07030F;font-size:20px;font-weight:800}
+pre{white-space:pre-wrap;word-break:break-word;background:#120A22;border:1px solid #3A1F66;border-radius:12px;padding:14px;color:#B9A9D9}</style></head>
+<body><h2>Test des emails</h2>
+<p>Appuyez sur le bouton : un email d'essai sera envoyé à mrclown509ht@gmail.com.</p>
+<button id="go">Envoyer un email d'essai</button><pre id="out">En attente…</pre>
+<script>
+const S='service_kkmugpk',K='XTjkjURTEBznjTHfE',IDS=['template_199c41r','199c41r'];
+document.getElementById('go').onclick=async()=>{
+  const out=document.getElementById('out');out.textContent='Envoi…';let log='';
+  for(const t of IDS){
+    try{
+      const r=await fetch('https://api.emailjs.com/api/v1.0/email/send',{method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({service_id:S,template_id:t,user_id:K,template_params:{to_email:'mrclown509ht@gmail.com',subject:'Test Mr Clown Gaming HT',message:'Email d’essai : si vous lisez ceci, les notifications fonctionnent.'}})});
+      const txt=await r.text();log+='Modèle « '+t+' » : '+r.status+' '+txt+'\n';
+      if(r.ok){log+='\n✅ REUSSI avec l’identifiant : '+t;break;}
+    }catch(e){log+='Modèle « '+t+' » : erreur réseau '+e+'\n';}
+  }
+  out.textContent=log;
+};
+</script></body></html>
