@@ -3,7 +3,7 @@
     "api/ff-check.js": {
       "maxDuration": 10
     },
-    "api/srv.js": {
+    "api/server.js": {
       "maxDuration": 30
     }
   },
