@@ -258,7 +258,11 @@
         .mc-header h1 { font-family: 'Inter', sans-serif !important; font-size: .85rem !important; font-weight: 600 !important; letter-spacing: .5em !important; color: #F2CF6B !important; text-align: center; }
         .mc-header h1 .mc-grad { background: none; -webkit-text-fill-color: #F2CF6B; color: #F2CF6B; }
         .mc-header p { letter-spacing: .4em !important; font-size: .6rem !important; text-align: center; color: #B5AA8E !important; }
-        @media (max-width: 767px) { .mc-header .max-w-7xl > div:first-child { position: absolute; left: 50%; transform: translateX(-50%); } }
+        @media (max-width: 767px) {
+            .mc-header > div { height: auto !important; flex-wrap: wrap; justify-content: center; row-gap: .6rem; padding-top: .75rem; padding-bottom: .75rem; }
+            .mc-header > div > div:first-child { width: 100%; justify-content: center; }
+            .mc-header > div > div:last-child { width: 100%; justify-content: center; flex-wrap: wrap; }
+        }
         .mc-hero { background: transparent; border: 0; box-shadow: none; border-radius: 0; text-align: center; padding: 2.5rem 0 1rem; overflow: visible; }
         .mc-hero::before { top: -150px; left: 50%; right: auto; margin-left: -260px; background: radial-gradient(circle, rgba(242, 207, 107, .2), transparent 68%); }
         .mc-hero::after { display: none; }
