@@ -837,7 +837,7 @@
                         </h3>
                         <p class="text-xs text-gray-400">Choisissez un jeu, puis un dossier (ex : Standard, Europe, Code PIN). Tous les packs affichés sont modifiables, déplaçables et supprimables. Les changements sont visibles tout de suite sur la boutique.</p>
                         <button type="button" onclick="adminAddMissingGames()" class="bg-brand-yellow text-black font-bold font-rajdhani uppercase text-xs px-3 py-2 rounded-lg">
-                            <i class="fa-solid fa-plus"></i> Ajouter Delta Force (9 packs + 3 pass)
+                            <i class="fa-solid fa-plus"></i> Ajouter les jeux manquants (Delta Force, eFootball, DLS Jetons)
                         </button>
                         <div id="admin-catalog-nav" class="space-y-3"></div>
                         <form id="np-form" onsubmit="adminAddCatalogPack(event)" class="bg-brand-card p-3 rounded-xl border border-brand-cardBorder grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-2 items-end">
@@ -3428,7 +3428,19 @@
                       note: "Vérifiez soigneusement votre Player ID : une recharge envoyée vers un mauvais compte n'est pas remboursable." },
               unit: 'Delta Coins',
               cur: [[18, 50], [30, 60], [60, 170], [320, 550], [460, 700], [750, 1200], [1480, 3200], [1980, 3600], [3950, 6500]],
-              pass: [['Season Pass Operations Special', 600], ['Season Pass Warfare Special', 650], ['Season Pass Delta Force Deluxe', 850]] }
+              pass: [['Season Pass Operations Special', 600], ['Season Pass Warfare Special', 650], ['Season Pass Delta Force Deluxe', 850]] },
+            { game: { key: 'efootball', name: 'eFootball', icon: 'fa-futbol', sections: [{ key: 'std', label: 'Coins' }],
+                      note: "Entrez votre numéro WhatsApp avec l'indicatif (ex : 50937000000) dans « ID du compte » et dans « Infos supplémentaires ». Notre équipe vous contacte pour finaliser la recharge. Ne mettez jamais votre mot de passe dans la commande.",
+                      needsExtra: 'Numéro WhatsApp (eFootball)' },
+              unit: 'Coins',
+              cur: [[130, 200], [300, 500], [550, 780], [750, 1050], [1040, 1450], [2130, 3000], [3250, 4450], [5700, 7500], [12800, 16000]],
+              pass: [] },
+            { game: { key: 'dlsjetons', name: 'DLS 2026 Jetons', icon: 'fa-coins', sections: [{ key: 'std', label: 'Jetons' }],
+                      note: "Entrez votre numéro WhatsApp avec l'indicatif (ex : 50937000000) dans « ID du compte » et dans « Infos supplémentaires ». Livraison en environ 15 minutes après contact de notre équipe. Ne mettez jamais votre mot de passe dans la commande.",
+                      needsExtra: 'Numéro WhatsApp (DLS Jetons)' },
+              unit: 'Jetons',
+              cur: [[900, 500], [1950, 950], [3450, 1500], [6700, 2900], [14500, 4700], [40500, 10000]],
+              pass: [] }
         ];
         function adminAddMissingGames() {
             if (adminRole !== 'admin') { showToast("Réservé à l'administrateur.", "error"); return; }
