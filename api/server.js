@@ -6,7 +6,10 @@ const crypto = require('crypto');
 const L = require('./_lib');
 const { fail, db, safeKey, ukeyOf, digits, str, norm, values, arr, nowStr } = L;
 
-const ROLE_LABELS = { admin: 'ADMINISTRATEUR', orders: 'GÉRANT COMMANDES', finance: 'GÉRANT FINANCES' };
+const ROLE_LABELS = { admin: 'ADMINISTRATEUR', manager: 'GÉRANT COMMANDES & FINANCES' };
+// Seuls ces deux rôles existent. Tout autre rôle présent dans MANAGERS est refusé.
+const STAFF_ROLES = new Set(['admin', 'manager']);
+const staffOf = email => { const m = L.managers()[email]; return m && STAFF_ROLES.has(m.role) ? m : null; };
 const FINAL = status => /^LIVR[ÉE]/i.test(status || '') || /^ANNUL/i.test(status || '');
 const rid = () => crypto.randomBytes(5).toString('hex');
 const normTx = c => String(c || '').replace(/\s+/g, '').toUpperCase();
@@ -38,7 +41,7 @@ async function authenticate(req) {
     const at = req.headers['x-admin-token'];
     if (at) {
         const p = L.readToken(at);
-        const m = p && p.t === 'a' ? L.managers()[p.k] : null;
+        const m = p && p.t === 'a' ? staffOf(p.k) : null;
         if (!m) ctx.adminInvalid = true; else ctx.admin = { email: p.k, role: m.role };
     }
     return ctx;
@@ -125,7 +128,7 @@ async function login(req, b) {
 async function adminLogin(req, b) {
     L.rateLimit('alogin:' + L.ipOf(req), 10, 600000);
     const email = str(b.email, 120).toLowerCase();
-    const m = L.managers()[email];
+    const m = staffOf(email);
     const ok = m ? await L.verifyPassword(String(b.password || ''), m.hash) : (await L.verifyPassword('x', '00:00'), false);
     if (!ok) fail(401, 'bad_credentials', 'Email ou mot de passe administrateur incorrect.');
     return { token: L.signToken({ t: 'a', k: email }, 12 * 3600), email, role: m.role, label: ROLE_LABELS[m.role] || 'GÉRANT' };
@@ -302,7 +305,7 @@ async function guestOrders(b) {
 }
 
 async function orderDecide(ctx, b) {
-    needStaff(ctx, ['admin', 'orders']);
+    needStaff(ctx, ['admin', 'manager']);
     const id = str(b.id, 20);
     const owner = await db.get('sec/oidx/' + id);
     if (!owner) fail(404, 'not_found', 'Commande introuvable.');
@@ -406,7 +409,7 @@ async function depositCreate(ctx, req, b) {
 }
 
 async function depositDecide(ctx, b) {
-    needStaff(ctx, ['admin', 'finance']);
+    needStaff(ctx, ['admin', 'manager']);
     const id = str(b.id, 40);
     if (b.decision === 'approve') {
         const d0 = await db.get('sec/deposits/' + id);
@@ -476,7 +479,7 @@ async function state(ctx) {
     }
     if (role) {
         jobs.push(db.get('sec/orders').then(v => add(orderMap, flatten(v).map(stripOrder))));
-        if (role === 'admin' || role === 'finance') {
+        if (role === 'admin' || role === 'manager') {
             jobs.push(db.get('sec/wallet').then(v => add(walletMap, flatten(v))));
             jobs.push(db.get('sec/deposits').then(v => add(depMap, values(v))));
         }
