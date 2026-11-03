@@ -181,26 +181,34 @@ async function orderCreate(ctx, req, b) {
     if (!lines.length) fail(400, 'empty', 'Panier vide.');
     const cat = await L.loadCatalog(true);
     const all = [...cat.products, ...cat.catalog];
+    // Jeu ou dossier « sans ID » : pas d'ID de compte demandé (infos de contact dans extraInfo)
+    const gameOf = p => cat.games.find(g => g.key === L.productGame(p)) || {};
+    const sectionOf = p => Object.values(gameOf(p).sections || {}).find(x => x.key === (p.section || 'std')) || {};
+    const noId = p => !!(gameOf(p).noId || sectionOf(p).noId);
     const items = lines.map(l => {
         const p = all.find(x => x.id === Number(l.id));
         if (!p) fail(409, 'product_gone', "Un article du panier n'existe plus : actualisez le panier.");
         const qty = Math.floor(Number(l.qty));
         if (!(qty >= 1 && qty <= 50)) fail(400, 'bad_qty', 'Quantité invalide.');
         if (!(Number(p.price) > 0)) fail(409, 'bad_price', 'Article indisponible.');
-        const pid = digits(l.pid);
-        if (!/^\d{6,15}$/.test(pid)) fail(400, 'bad_pid', `ID de compte invalide pour : ${L.productName(p)}.`);
+        let pid = '';
+        if (!noId(p)) {
+            pid = digits(l.pid);
+            if (!/^\d{6,15}$/.test(pid)) fail(400, 'bad_pid', `ID de compte invalide pour : ${L.productName(p)}.`);
+        }
         return { p, qty, pid, pname: str(l.pname, 40) };
     });
     const subtotal = items.reduce((s, i) => s + Number(i.p.price) * i.qty, 0);
 
     // Infos supplémentaires exigées par certains jeux
     const extra = str(b.extraInfo, 120);
-    const needs = items.map(i => (cat.games.find(g => g.key === L.productGame(i.p)) || {}).needsExtra).filter(Boolean);
+    const needs = items.flatMap(i => [gameOf(i.p).needsExtra, sectionOf(i.p).needsExtra]).filter(Boolean);
     if (needs.length && !extra) fail(400, 'extra_required', 'Information requise : ' + [...new Set(needs)].join(' + ') + '.');
 
     // Code promo
     const promoCode = L.normalizePromoCode(b.promoCode);
-    const userKey = user ? user.email.toLowerCase() : 'ff:' + items[0].pid;
+    const firstPid = (items.find(i => i.pid) || {}).pid;
+    const userKey = user ? user.email.toLowerCase() : (firstPid ? 'ff:' + firstPid : 'wa:' + digits(extra));
     let promo = null, discount = 0;
     if (promoCode) {
         promo = await db.get('sec/promos/' + safeKey(promoCode));
@@ -263,13 +271,13 @@ async function orderCreate(ctx, req, b) {
     } catch (e) { await rollback(); throw e; }
 
     const orderLines = items.map(i => {
-        const line = { name: L.productName(i.p), qty: i.qty, playerId: i.pid };
+        const line = { name: L.productName(i.p), qty: i.qty, playerId: i.pid || '—' };
         if (i.pname) line.playerName = i.pname;
         return line;
     });
     const order = {
         id, userEmail: user ? user.email : 'Invité',
-        playerId: [...new Set(items.map(i => i.pid))].join(' / '),
+        playerId: [...new Set(items.map(i => i.pid || '—'))].join(' / '),
         lines: orderLines,
         items: orderLines.map(l => `${l.qty}x ${l.name}`).join(', '),
         price: `${total} G`, numericPrice: total,
