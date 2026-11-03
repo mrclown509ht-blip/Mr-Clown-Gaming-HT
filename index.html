@@ -1465,6 +1465,9 @@
         const allProducts = () => PRODUCTS.concat(GAME_CATALOG);
         const productGame = p => p.game || 'freefire';
         const productSection = p => p.section || 'std';
+        // Un pack « sans ID » (jeu ou dossier marqué noId) ne demande pas d'ID de compte dans le panier
+        const sectionDef = p => { const g = GAMES.find(x => x.key === productGame(p)); return g && Object.values(g.sections || {}).find(s => s.key === productSection(p)); };
+        const productNoId = p => { const g = GAMES.find(x => x.key === productGame(p)); const s = sectionDef(p); return !!((g && g.noId) || (s && s.noId)); };
         let shopGame = 'freefire';
         let shopSection = 'std';
         let cartExtraInfo = localStorage.getItem('mrclown_cart_extra') || '';
@@ -2192,7 +2195,7 @@
         function fillEmptyItemIds() {
             if (!cartPlayerId) return false;
             let changed = false;
-            cart.forEach(i => { if (!String(i.pid || '').trim()) { i.pid = cartPlayerId; changed = true; } });
+            cart.forEach(i => { if (!productNoId(i) && !String(i.pid || '').trim()) { i.pid = cartPlayerId; changed = true; } });
             if (changed) saveCart();
             return changed;
         }
@@ -2427,7 +2430,8 @@
             const out = [];
             cart.forEach(i => {
                 const g = GAMES.find(x => x.key === i.game);
-                if (g && g.needsExtra && !out.includes(g.needsExtra)) out.push(g.needsExtra);
+                const s = sectionDef(i);
+                [g && g.needsExtra, s && s.needsExtra].forEach(t => { if (t && !out.includes(t)) out.push(t); });
             });
             return out;
         }
@@ -2558,14 +2562,14 @@
                                 </button>
                             </div>
                         </div>
-                        <div class="pt-3 border-t border-brand-cardBorder space-y-1.5">
+                        ${productNoId(item) ? `<p class="pt-3 border-t border-brand-cardBorder text-[11px] text-gray-400">Aucun ID de compte pour ce pack : indiquez le contact demandé dans « Infos supplémentaires ».</p>` : `                        <div class="pt-3 border-t border-brand-cardBorder space-y-1.5">
                             <label for="cart-pid-${item.id}" class="block text-[11px] text-brand-yellow font-bold uppercase">ID du compte${gameDef ? ' ' + escapeHtml(gameDef.name) : ''} pour ce pack *</label>
                             <div class="flex gap-2">
                                 <input type="text" inputmode="numeric" autocomplete="off" id="cart-pid-${item.id}" value="${escapeHtml(item.pid || '')}" placeholder="Ex: 2849104928" oninput="onItemPidInput(${item.id}, this)" class="flex-grow min-w-0 bg-brand-card border border-brand-cardBorder rounded-lg p-2.5 text-white font-mono text-sm focus:outline-none focus:border-brand-yellow">
                                 ${verifyBtn}
                             </div>
                             <p id="cart-pst-${item.id}" class="text-[11px] ${st.cls} font-bold font-mono break-words">${escapeHtml(st.text)}</p>
-                        </div>
+                        </div>`}
                     </div>
                 `;
             }).join('');
@@ -2634,7 +2638,7 @@
             }
 
             for (const item of cart) {
-                if (!isValidPlayerId(item.pid)) {
+                if (!productNoId(item) && !isValidPlayerId(item.pid)) {
                     const label = item.fullName ? item.fullName : (item.category === 'diamonds' ? `${item.total} Diamants` : item.title);
                     showToast(`Saisissez l'ID du compte pour : ${label}`, "error");
                     const el = document.getElementById('cart-pid-' + item.id);
@@ -2694,7 +2698,7 @@
         // ============================================================
         async function placeOrder(method, txid) {
             const lines = cart.map(i => {
-                const pid = String(i.pid || '').trim();
+                const pid = productNoId(i) ? '' : String(i.pid || '').trim();
                 return { id: i.id, qty: i.qty, pid, pname: (i.pnameId === pid && i.pname) ? i.pname : '' };
             });
             const j = await srv('order_create', {
@@ -3424,37 +3428,51 @@
 
         // Jeux ajoutés à la demande : le catalogue en ligne ne reprend pas les valeurs par défaut du code
         const EXTRA_GAMES = [
-            { game: { key: 'deltaforce', name: 'Delta Force', icon: 'fa-crosshairs', sections: [{ key: 'std', label: 'Global' }],
+            { game: { key: 'deltaforce', name: 'Delta Force', icon: 'fa-crosshairs',
                       note: "Vérifiez soigneusement votre Player ID : une recharge envoyée vers un mauvais compte n'est pas remboursable." },
-              unit: 'Delta Coins',
+              section: { key: 'std', label: 'Global' }, unit: 'Delta Coins',
               cur: [[18, 50], [30, 60], [60, 170], [320, 550], [460, 700], [750, 1200], [1480, 3200], [1980, 3600], [3950, 6500]],
               pass: [['Season Pass Operations Special', 600], ['Season Pass Warfare Special', 650], ['Season Pass Delta Force Deluxe', 850]] },
-            { game: { key: 'efootball', name: 'eFootball', icon: 'fa-futbol', sections: [{ key: 'std', label: 'Coins' }],
-                      note: "Entrez votre numéro WhatsApp avec l'indicatif (ex : 50937000000) dans « ID du compte » et dans « Infos supplémentaires ». Notre équipe vous contacte pour finaliser la recharge. Ne mettez jamais votre mot de passe dans la commande.",
-                      needsExtra: 'Numéro WhatsApp (eFootball)' },
-              unit: 'Coins',
-              cur: [[130, 200], [300, 500], [550, 780], [750, 1050], [1040, 1450], [2130, 3000], [3250, 4450], [5700, 7500], [12800, 16000]],
-              pass: [] },
-            { game: { key: 'dlsjetons', name: 'DLS 2026 Jetons', icon: 'fa-coins', sections: [{ key: 'std', label: 'Jetons' }],
-                      note: "Entrez votre numéro WhatsApp avec l'indicatif (ex : 50937000000) dans « ID du compte » et dans « Infos supplémentaires ». Livraison en environ 15 minutes après contact de notre équipe. Ne mettez jamais votre mot de passe dans la commande.",
-                      needsExtra: 'Numéro WhatsApp (DLS Jetons)' },
-              unit: 'Jetons',
-              cur: [[900, 500], [1950, 950], [3450, 1500], [6700, 2900], [14500, 4700], [40500, 10000]],
-              pass: [] }
+            { game: { key: 'efootball', name: 'eFootball', icon: 'fa-futbol',
+                      note: "Indiquez votre numéro WhatsApp avec l'indicatif (ex : 50937000000) dans « Infos supplémentaires ». Notre équipe vous contacte pour finaliser la recharge. Ne mettez jamais votre mot de passe dans la commande." },
+              section: { key: 'std', label: 'Coins', noId: true, needsExtra: 'Numéro WhatsApp (eFootball)' }, dropGameExtra: true, unit: 'Coins',
+              cur: [[130, 200], [300, 500], [550, 780], [750, 1050], [1040, 1450], [2130, 3000], [3250, 4450], [5700, 7500], [12800, 16000]], pass: [] },
+            { game: { key: 'dls', name: 'Dream League Soccer 2026', icon: 'fa-futbol' },
+              section: { key: 'jetons', label: 'Jetons', noId: true, needsExtra: 'Numéro WhatsApp (DLS Jetons)' }, unit: 'Jetons',
+              cur: [[900, 500], [1950, 950], [3450, 1500], [6700, 2900], [14500, 4700], [40500, 10000]], pass: [] }
         ];
+        // Compte (apply = false) ou applique (apply = true) les ajouts et corrections nécessaires
+        function syncExtraGames(apply) {
+            let n = 0;
+            if (GAMES.some(g => g.key === 'dlsjetons') || GAME_CATALOG.some(p => p.game === 'dlsjetons')) { // ancienne version : DLS Jetons était un jeu à part
+                n++;
+                if (apply) { GAMES = GAMES.filter(g => g.key !== 'dlsjetons'); GAME_CATALOG = GAME_CATALOG.filter(p => p.game !== 'dlsjetons'); }
+            }
+            let t = Date.now();
+            EXTRA_GAMES.forEach(x => {
+                let g = GAMES.find(y => y.key === x.game.key);
+                if (!g) { n++; if (apply) { g = { ...x.game, sections: [] }; GAMES.push(g); } }
+                let s = g && Object.values(g.sections || {}).find(y => y.key === x.section.key);
+                if (!s) { n++; if (apply) { s = { ...x.section }; g.sections = Object.values(g.sections || {}); g.sections.push(s); } }
+                else if (x.section.noId && !s.noId) { n++; if (apply) { s.noId = true; s.needsExtra = x.section.needsExtra; } }
+                if (g && x.dropGameExtra && g.needsExtra) { n++; if (apply) delete g.needsExtra; }
+                if (!GAME_CATALOG.some(p => p.game === x.game.key && productSection(p) === x.section.key)) {
+                    n++;
+                    if (apply) {
+                        x.cur.forEach(([amount, price]) => GAME_CATALOG.push({ id: ++t, category: 'pack', kind: 'currency', game: x.game.key, section: x.section.key, amount: fmtAmount(amount), unit: x.unit, price, oldPrice: 0, badge: '' }));
+                        x.pass.forEach(([title, price]) => GAME_CATALOG.push({ id: ++t, category: 'pack', kind: 'pass', game: x.game.key, section: x.section.key, title, price, oldPrice: 0, badge: '' }));
+                    }
+                }
+            });
+            return n;
+        }
         function adminAddMissingGames() {
             if (adminRole !== 'admin') { showToast("Réservé à l'administrateur.", "error"); return; }
-            const todo = EXTRA_GAMES.filter(x => !GAMES.some(g => g.key === x.game.key));
-            if (!todo.length) { showToast("Ce jeu est déjà dans la boutique."); return; }
-            if (!confirm(`Ajouter ${todo.map(x => x.game.name).join(', ')} avec ses packs et ses prix ?\nVous pourrez ensuite modifier ou supprimer chaque pack.`)) return;
-            let t = Date.now();
-            todo.forEach(x => {
-                GAMES.push({ ...x.game });
-                x.cur.forEach(([amount, price]) => GAME_CATALOG.push({ id: ++t, category: 'pack', kind: 'currency', game: x.game.key, section: 'std', amount: fmtAmount(amount), unit: x.unit, price, oldPrice: 0, badge: '' }));
-                x.pass.forEach(([title, price]) => GAME_CATALOG.push({ id: ++t, category: 'pack', kind: 'pass', game: x.game.key, section: 'std', title, price, oldPrice: 0, badge: '' }));
-            });
+            if (!syncExtraGames(false)) { showToast("La boutique est déjà à jour."); return; }
+            if (!confirm("Ajouter ou mettre à jour Delta Force, eFootball et Dream League Soccer 2026 (Jetons) avec leurs packs et leurs prix ?\nVous pourrez ensuite modifier ou supprimer chaque pack.")) return;
+            syncExtraGames(true);
             persistCatalog();
-            showToast("Jeu ajouté à la boutique !");
+            showToast("Boutique mise à jour !");
         }
 
         function adminSavePack(id) {
