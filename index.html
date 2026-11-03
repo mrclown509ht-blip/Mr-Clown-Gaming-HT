@@ -836,6 +836,9 @@
                             <i class="fa-solid fa-tags text-brand-yellow"></i> Gestion des Jeux, Dossiers et Packs
                         </h3>
                         <p class="text-xs text-gray-400">Choisissez un jeu, puis un dossier (ex : Standard, Europe, Code PIN). Tous les packs affichés sont modifiables, déplaçables et supprimables. Les changements sont visibles tout de suite sur la boutique.</p>
+                        <button type="button" onclick="adminAddMissingGames()" class="bg-brand-yellow text-black font-bold font-rajdhani uppercase text-xs px-3 py-2 rounded-lg">
+                            <i class="fa-solid fa-plus"></i> Ajouter Delta Force (9 packs + 3 pass)
+                        </button>
                         <div id="admin-catalog-nav" class="space-y-3"></div>
                         <form id="np-form" onsubmit="adminAddCatalogPack(event)" class="bg-brand-card p-3 rounded-xl border border-brand-cardBorder grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-2 items-end">
                             <div id="np-target" class="col-span-full text-xs font-bold text-brand-yellow font-rajdhani uppercase"></div>
@@ -3417,6 +3420,29 @@
             ['np-amount', 'np-title', 'np-price', 'np-old', 'np-badge'].forEach(id => document.getElementById(id).value = '');
             persistCatalog();
             showToast("Nouveau pack ajouté à la boutique !");
+        }
+
+        // Jeux ajoutés à la demande : le catalogue en ligne ne reprend pas les valeurs par défaut du code
+        const EXTRA_GAMES = [
+            { game: { key: 'deltaforce', name: 'Delta Force', icon: 'fa-crosshairs', sections: [{ key: 'std', label: 'Global' }],
+                      note: "Vérifiez soigneusement votre Player ID : une recharge envoyée vers un mauvais compte n'est pas remboursable." },
+              unit: 'Delta Coins',
+              cur: [[18, 50], [30, 60], [60, 170], [320, 550], [460, 700], [750, 1200], [1480, 3200], [1980, 3600], [3950, 6500]],
+              pass: [['Season Pass Operations Special', 600], ['Season Pass Warfare Special', 650], ['Season Pass Delta Force Deluxe', 850]] }
+        ];
+        function adminAddMissingGames() {
+            if (adminRole !== 'admin') { showToast("Réservé à l'administrateur.", "error"); return; }
+            const todo = EXTRA_GAMES.filter(x => !GAMES.some(g => g.key === x.game.key));
+            if (!todo.length) { showToast("Ce jeu est déjà dans la boutique."); return; }
+            if (!confirm(`Ajouter ${todo.map(x => x.game.name).join(', ')} avec ses packs et ses prix ?\nVous pourrez ensuite modifier ou supprimer chaque pack.`)) return;
+            let t = Date.now();
+            todo.forEach(x => {
+                GAMES.push({ ...x.game });
+                x.cur.forEach(([amount, price]) => GAME_CATALOG.push({ id: ++t, category: 'pack', kind: 'currency', game: x.game.key, section: 'std', amount: fmtAmount(amount), unit: x.unit, price, oldPrice: 0, badge: '' }));
+                x.pass.forEach(([title, price]) => GAME_CATALOG.push({ id: ++t, category: 'pack', kind: 'pass', game: x.game.key, section: 'std', title, price, oldPrice: 0, badge: '' }));
+            });
+            persistCatalog();
+            showToast("Jeu ajouté à la boutique !");
         }
 
         function adminSavePack(id) {
