@@ -184,7 +184,8 @@ async function orderCreate(ctx, req, b) {
     // Jeu ou dossier « sans ID » : pas d'ID de compte demandé (infos de contact dans extraInfo)
     const gameOf = p => cat.games.find(g => g.key === L.productGame(p)) || {};
     const sectionOf = p => Object.values(gameOf(p).sections || {}).find(x => x.key === (p.section || 'std')) || {};
-    const noId = p => !!(gameOf(p).noId || sectionOf(p).noId);
+    const NOID_BUILTIN = ['efootball:std', 'dls:jetons'];
+    const noId = p => !!(gameOf(p).noId || sectionOf(p).noId || NOID_BUILTIN.includes(L.productGame(p) + ':' + (p.section || 'std')));
     const items = lines.map(l => {
         const p = all.find(x => x.id === Number(l.id));
         if (!p) fail(409, 'product_gone', "Un article du panier n'existe plus : actualisez le panier.");
