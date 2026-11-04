@@ -334,6 +334,30 @@ async function orderDecide(ctx, b) {
 }
 
 // ------------------------------------------------------------------ portefeuille
+// ------------------------------------------------------------------ emails envoyés par le serveur (EmailJS)
+// Nécessite la variable EMAILJS_PRIVATE_KEY (Vercel). Sans elle, aucun email n'est envoyé et rien ne casse.
+async function sendMail(to, subject, message) {
+    const priv = process.env.EMAILJS_PRIVATE_KEY || '';
+    if (!priv || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(String(to || ''))) return false;
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 4000);
+    try {
+        const r = await fetch('https://api.emailjs.com/api/v1.0/email/send', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: ctrl.signal,
+            body: JSON.stringify({
+                service_id: process.env.EMAILJS_SERVICE_ID || 'service_kkmugpk',
+                template_id: process.env.EMAILJS_TEMPLATE_ID || 'template_n47rgcg',
+                user_id: process.env.EMAILJS_PUBLIC_KEY || 'XTjkjURTEBznjTHfE',
+                accessToken: priv,
+                template_params: { to_email: to, subject, message }
+            })
+        });
+        if (!r.ok) console.error('emailjs', r.status, await r.text());
+        return r.ok;
+    } catch (e) { console.error('emailjs', e.message); return false; }
+    finally { clearTimeout(timer); }
+}
+
 // ------------------------------------------------------------------ crédit automatique par SMS Natcash
 const SMS_AUTO_MAX = Number(process.env.SMS_AUTO_MAX) || 25000;   // au-dessus : validation manuelle
 const SMS_MAX_AGE = 3 * 24 * 3600 * 1000;                          // SMS plus vieux que 3 jours : manuel
@@ -364,6 +388,8 @@ async function autoSettle(id) {
     catch (e) { await db.put('sec/deposits/' + id, dep); return false; }
     await addWallet(ukeyOf(dep.userEmail), dep.userEmail, 'Dépôt Natcash', dep.txid, `+${dep.amount} G`, 'CONFIRMÉ', dep.date);
     await db.put('sec/txids/' + txKey(dep.txid), 'wallet');
+    await sendMail(dep.userEmail, 'Mr CLOWN Gaming HT - Recharge Mr Wallet confirmée',
+        `Bonjour, votre recharge de ${dep.amount} G (code ${dep.txid}) a été confirmée automatiquement et ajoutée à votre solde Mr Wallet. Vous pouvez dès maintenant commander. - L'équipe Mr CLOWN Gaming HT`);
     return true;
 }
 
@@ -427,13 +453,13 @@ async function depositDecide(ctx, b) {
     }
     let dep = null;
     await db.txn('sec/deposits/' + id, v => { if (!v) fail(404, 'not_found', 'Dépôt introuvable ou déjà traité.'); dep = v; return null; });
-    if (b.decision !== 'approve') { await db.del('sec/txids/' + txKey(dep.txid)); return { ok: true }; }
+    if (b.decision !== 'approve') { await db.del('sec/txids/' + txKey(dep.txid)); return { ok: true, amount: dep.amount, userEmail: dep.userEmail }; }
     try {
         await creditUser(ukeyOf(dep.userEmail), Number(dep.amount));
     } catch (e) { await db.put('sec/deposits/' + id, dep); throw e; }
     await addWallet(ukeyOf(dep.userEmail), dep.userEmail, 'Dépôt Natcash', dep.txid, `+${dep.amount} G`, 'CONFIRMÉ', dep.date);
     await db.put('sec/txids/' + txKey(dep.txid), 'wallet');
-    return { ok: true };
+    return { ok: true, amount: dep.amount, userEmail: dep.userEmail };
 }
 
 async function rankClaim(ctx, b) {
@@ -579,7 +605,7 @@ async function resetDecide(ctx, b) {
         });
     }
     await db.del('sec/resets/' + id);
-    return { ok: true };
+    return { ok: true, userEmail: r.email };
 }
 
 async function promoWrite(ctx, b) {
@@ -697,6 +723,67 @@ async function purgeLegacy(ctx, b) {
     return { ok: true };
 }
 
+// ------------------------------------------------------------------ journal des actions des gérants
+const AUDITED = new Set(['order_decide', 'deposit_decide', 'reset_decide', 'promo_write', 'data_write', 'client_block', 'wallet_toggle', 'migrate', 'purge_legacy']);
+function auditDetail(b, out) {
+    const d = {};
+    ['id', 'decision', 'key', 'email', 'blocked', 'off', 'code'].forEach(k => {
+        if (b[k] !== undefined && b[k] !== null && typeof b[k] !== 'object') d[k] = String(b[k]).slice(0, 60);
+    });
+    if (b.action === 'promo_write' && b.patch) d.codes = Object.keys(b.patch).slice(0, 10).join(',');
+    if (b.action === 'data_write' && b.patch) d.elements = String(Object.keys(b.patch).length);
+    if (out) {
+        if (out.order) { d.statut = String(out.order.status || ''); d.montant = String(out.order.price || ''); }
+        ['amount', 'userEmail'].forEach(k => { if (out[k] !== undefined) d[k] = String(out[k]).slice(0, 60); });
+    }
+    return d;
+}
+async function auditLog(ctx, b, out) {
+    const now = new Date();
+    await db.put(`sec/audit/${now.toISOString().slice(0, 10)}/${now.getTime()}-${rid().slice(0, 3)}`,
+        { ts: now.getTime(), who: ctx.admin.email, role: ctx.admin.role, action: b.action, detail: auditDetail(b, out) });
+}
+async function auditList(ctx) {
+    needStaff(ctx, ['admin']);
+    const days = [];
+    for (let i = 0; i < 14; i++) days.push(new Date(Date.now() - i * 86400000).toISOString().slice(0, 10));
+    const parts = await Promise.all(days.map(d => db.get('sec/audit/' + d).catch(() => null)));
+    const all = [];
+    parts.forEach(p => { if (p) Object.values(p).forEach(v => all.push(v)); });
+    all.sort((a, b) => b.ts - a.ts);
+    return { entries: all.slice(0, 300) };
+}
+
+// ------------------------------------------------------------------ sauvegarde (administrateur seulement, sans mots de passe)
+async function backupExport(ctx, b) {
+    needStaff(ctx, ['admin']);
+    const part = String(b.part || '');
+    if (part === 'catalog') {
+        const data = {};
+        for (const k of CATALOG_KEYS) data[k] = await db.get('mrclown/' + k);
+        return { part, data };
+    }
+    const paths = { users: 'sec/users', orders: 'sec/orders', deposits: 'sec/deposits', wallet: 'sec/wallet', promos: 'sec/promos', resets: 'sec/resets' };
+    if (!paths[part]) fail(400, 'bad_part', 'Partie inconnue.');
+    const data = await db.get(paths[part]);
+    if ((part === 'users' || part === 'resets') && data && typeof data === 'object') {
+        for (const k of Object.keys(data)) { const u = { ...data[k] }; delete u.pw; delete u.tv; data[k] = u; }
+    }
+    if (part === 'users') await auditLog(ctx, { action: 'backup_export' }, null).catch(() => {});
+    return { part, data };
+}
+
+// ------------------------------------------------------------------ suivi d'une commande par son numéro (public, champs limités)
+async function orderTrack(req, b) {
+    L.rateLimit('trk:' + L.ipOf(req), 20, 600000);
+    const id = String(b.id || '').trim().replace(/^#/, '');
+    if (!/^[A-Za-z0-9_-]{3,30}$/.test(id)) fail(400, 'bad_id', 'Numéro de commande invalide.');
+    const owner = await db.get('sec/oidx/' + id);
+    const o = owner ? await db.get(`sec/orders/${owner}/${id}`) : null;
+    if (!o) fail(404, 'not_found', 'Commande introuvable. Vérifiez le numéro.');
+    return { order: { id: o.id, status: o.status, items: o.items, date: o.date, price: o.price } };
+}
+
 // ------------------------------------------------------------------ routeur
 module.exports = async (req, res) => {
     res.setHeader('Content-Type', 'application/json; charset=utf-8');
@@ -733,8 +820,12 @@ module.exports = async (req, res) => {
             case 'data_write': out = await dataWrite(ctx, b); break;
             case 'migrate': out = await migrate(ctx); break;
             case 'purge_legacy': out = await purgeLegacy(ctx, b); break;
+            case 'audit_list': out = await auditList(ctx); break;
+            case 'backup_export': out = await backupExport(ctx, b); break;
+            case 'order_track': out = await orderTrack(req, b); break;
             default: fail(400, 'bad_action', 'Action inconnue.');
         }
+        if (ctx.admin && AUDITED.has(b.action)) await auditLog(ctx, b, out).catch(e => console.error('audit', e));
         res.status(200).send(JSON.stringify({ ok: true, ...out }));
     } catch (e) {
         if (e instanceof L.HttpError) return res.status(e.status).send(JSON.stringify({ ok: false, error: e.code, message: e.message }));
