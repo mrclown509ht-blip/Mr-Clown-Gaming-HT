@@ -1467,7 +1467,8 @@
         const productSection = p => p.section || 'std';
         // Un pack « sans ID » (jeu ou dossier marqué noId) ne demande pas d'ID de compte dans le panier
         const sectionDef = p => { const g = GAMES.find(x => x.key === productGame(p)); return g && Object.values(g.sections || {}).find(s => s.key === productSection(p)); };
-        const productNoId = p => { const g = GAMES.find(x => x.key === productGame(p)); const s = sectionDef(p); return !!((g && g.noId) || (s && s.noId)); };
+        const NOID_BUILTIN = ['efootball:std', 'dls:jetons'];
+        const productNoId = p => { const g = GAMES.find(x => x.key === productGame(p)); const s = sectionDef(p); return !!((g && g.noId) || (s && s.noId) || NOID_BUILTIN.includes(productGame(p) + ':' + productSection(p))); };
         let shopGame = 'freefire';
         let shopSection = 'std';
         let cartExtraInfo = localStorage.getItem('mrclown_cart_extra') || '';
@@ -2893,6 +2894,19 @@
                 `Dépôt de ${d.amount} G par ${d.user} (${d.userEmail}) - code ${d.txid}. ` + (auto ? 'SMS Natcash reconnu : le client a été crédité automatiquement.' : 'À valider rapidement !'));
         }
 
+        // Emails envoyés aux clients quand leur commande, leur recharge Mr Wallet ou leur demande de mot de passe est traitée
+        const SHOP_NAME = 'Mr CLOWN Gaming HT';
+        function emailCustomer(to, subject, message) {
+            to = String(to || '').trim();
+            if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(to)) return; // invité sans email : rien à envoyer
+            emailNotify([to], `${SHOP_NAME} - ${subject}`, `${message} - L'équipe ${SHOP_NAME}`);
+        }
+        function emailOrderDecision(o, approve) {
+            if (!o) return;
+            if (approve) emailCustomer(o.userEmail, `Commande ${o.id} livrée`, `Bonjour, votre commande ${o.id} (${o.items}) a été livrée avec succès. Merci pour votre confiance !`);
+            else emailCustomer(o.userEmail, `Commande ${o.id} annulée`, `Bonjour, votre commande ${o.id} (${o.items}) a été annulée.` + (o.payment === 'Solde Mr Wallet' ? ' Le montant a été remboursé sur votre Mr Wallet.' : ' Si vous avez déjà payé, contactez notre support WhatsApp pour le remboursement.'));
+        }
+
         function chatMe() {
             if (isAdminLoggedIn && adminEmail) return { email: adminEmail, name: ROLE_LABELS[adminRole] || 'Gérant', staff: true };
             if (currentUser) return { email: currentUser.email, name: `${currentUser.firstname || ''} ${currentUser.lastname || ''}`.trim() || currentUser.email, staff: false };
@@ -3160,6 +3174,7 @@
                 const j = await srv('order_decide', { id: orderId, decision });
                 const i = orders.findIndex(o => o.id === orderId);
                 if (i !== -1) orders[i] = j.order;
+                emailOrderDecision(j.order, decision === 'approve');
                 await refreshState();
                 renderAdminDashboard();
                 if (decision === 'approve') showToast(`Commande ${orderId} marquée comme LIVRÉE !`);
@@ -3174,6 +3189,8 @@
             if (!dep) return;
             try {
                 await srv('deposit_decide', { id: dep.id, decision });
+                if (decision === 'approve') emailCustomer(dep.userEmail, 'Recharge Mr Wallet confirmée', `Bonjour, votre recharge de ${dep.amount} G (code ${dep.txid}) a été confirmée et ajoutée à votre solde Mr Wallet. Vous pouvez dès maintenant commander.`);
+                else emailCustomer(dep.userEmail, 'Recharge Mr Wallet refusée', `Bonjour, votre recharge de ${dep.amount} G (code ${dep.txid}) n'a pas pu être confirmée. Vérifiez le code de transaction ou contactez notre support WhatsApp.`);
                 await refreshState();
                 renderAdminDashboard();
                 if (decision === 'approve') showToast(`Dépôt de ${dep.amount} G approuvé avec succès !`);
@@ -3699,7 +3716,9 @@
         }
         async function adminApproveReset(id) {
             try {
+                const rq = resetRequests.find(x => x.id === id);
                 await srv('reset_decide', { id, decision: 'approve' });
+                if (rq) emailCustomer(rq.email, 'Mot de passe modifié', `Bonjour ${rq.name || ''}, votre demande de changement de mot de passe (réf. ${rq.id}) a été acceptée. Vous pouvez vous connecter avec le nouveau mot de passe que vous avez choisi. Si ce n'était pas vous, contactez-nous immédiatement sur WhatsApp.`);
                 await refreshState();
                 renderAdminResets();
                 showToast("Nouveau mot de passe activé. Prévenez le client.");
@@ -3708,7 +3727,9 @@
         async function adminRejectReset(id) {
             if (!confirm("Rejeter cette demande ?")) return;
             try {
+                const rq = resetRequests.find(x => x.id === id);
                 await srv('reset_decide', { id, decision: 'reject' });
+                if (rq) emailCustomer(rq.email, 'Demande de mot de passe refusée', `Bonjour ${rq.name || ''}, votre demande de changement de mot de passe (réf. ${rq.id}) a été refusée. Votre ancien mot de passe reste valable. Contactez notre support WhatsApp si vous avez besoin d'aide.`);
                 await refreshState();
                 renderAdminResets();
                 showToast("Demande rejetée.", "error");
