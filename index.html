@@ -664,6 +664,15 @@
                     <span class="text-xs text-gray-400">Suivi en temps réel de vos commandes</span>
                 </div>
 
+                <div class="mb-6 bg-brand-dark/70 border border-brand-cardBorder rounded-xl p-4">
+                    <label for="track-id" class="block text-xs text-gray-400 font-bold uppercase mb-2"><i class="fa-solid fa-magnifying-glass"></i> Suivre une commande par son numéro</label>
+                    <div class="flex gap-2">
+                        <input id="track-id" type="text" placeholder="Numéro de commande" autocomplete="off" class="flex-1 min-w-0 bg-brand-dark border border-brand-cardBorder rounded-xl p-3 text-white font-mono focus:outline-none focus:border-brand-yellow">
+                        <button type="button" onclick="trackOrder(); playSound('click');" class="px-4 bg-brand-yellow text-black font-rajdhani font-extrabold rounded-xl uppercase">Suivre</button>
+                    </div>
+                    <div id="track-result" class="mt-3 text-sm"></div>
+                </div>
+
                 <div class="overflow-x-auto">
                     <table class="w-full text-left text-sm">
                         <thead class="bg-brand-dark text-gray-400 uppercase font-rajdhani text-xs">
@@ -871,6 +880,26 @@
                         <div class="flex flex-wrap gap-2">
                             <button onclick="adminMigrate(); playSound('click');" class="bg-green-600 hover:bg-green-500 text-white font-rajdhani font-bold px-4 py-2 rounded-lg text-sm"><i class="fa-solid fa-database mr-1"></i> 1. Migrer les anciennes données</button>
                             <button onclick="adminPurgeLegacy(); playSound('click');" class="bg-red-700 hover:bg-red-600 text-white font-rajdhani font-bold px-4 py-2 rounded-lg text-sm"><i class="fa-solid fa-trash-can mr-1"></i> 2. Supprimer les anciennes données publiques</button>
+                        </div>
+                    </div>
+
+                    <!-- Sauvegarde et journal des actions -->
+                    <div data-role="admin" class="bg-brand-dark/80 p-5 rounded-2xl border border-brand-cardBorder">
+                        <h3 class="font-rajdhani text-xl font-bold text-white mb-1 flex items-center gap-2">
+                            <i class="fa-solid fa-clipboard-list text-brand-yellow"></i> Sauvegarde et journal des actions
+                        </h3>
+                        <p class="text-xs text-gray-400 mb-3">La sauvegarde télécharge un fichier avec les clients (sans mots de passe), commandes, dépôts, mouvements Wallet, codes promo et catalogue. Faites-en une régulièrement et gardez le fichier en lieu sûr. Le journal montre qui a validé ou annulé quoi, et à quelle heure (14 derniers jours).</p>
+                        <div class="flex flex-wrap gap-2 mb-3">
+                            <button onclick="adminBackup(); playSound('click');" class="bg-green-600 hover:bg-green-500 text-white font-rajdhani font-bold px-4 py-2 rounded-lg text-sm"><i class="fa-solid fa-download mr-1"></i> Télécharger une sauvegarde</button>
+                            <button onclick="adminLoadAudit(); playSound('click');" class="bg-brand-yellow text-black font-rajdhani font-bold px-4 py-2 rounded-lg text-sm"><i class="fa-solid fa-list mr-1"></i> Afficher le journal</button>
+                        </div>
+                        <div class="overflow-x-auto">
+                            <table class="w-full text-left">
+                                <thead class="text-gray-400 font-rajdhani uppercase text-xs border-b border-brand-cardBorder">
+                                    <tr><th class="p-3">Date</th><th class="p-3">Compte</th><th class="p-3">Rôle</th><th class="p-3">Action</th><th class="p-3">Détails</th></tr>
+                                </thead>
+                                <tbody id="admin-audit-tbody" class="divide-y divide-brand-cardBorder font-mono text-xs"></tbody>
+                            </table>
                         </div>
                     </div>
 
@@ -1161,6 +1190,7 @@
 
     <!-- MODAL 2: ADMIN LOGIN -->
     <!-- CHAT -->
+    <a href="https://wa.me/50947519750" target="_blank" rel="noopener" aria-label="Support WhatsApp" onclick="playSound('click')" class="fixed bottom-4 left-4 z-40 w-14 h-14 rounded-full bg-green-500 text-white shadow-2xl flex items-center justify-center text-2xl"><i class="fa-brands fa-whatsapp"></i></a>
     <button id="chat-fab" onclick="toggleChat()" class="hidden fixed bottom-20 right-4 z-40 w-14 h-14 rounded-full bg-amber-500 text-black shadow-2xl items-center justify-center text-xl">
         <i class="fa-solid fa-comments"></i>
         <span id="chat-badge" class="hidden absolute -top-1 -right-1 bg-red-600 text-white text-[10px] font-bold rounded-full min-w-[20px] h-5 px-1 items-center justify-center">0</span>
@@ -2801,6 +2831,26 @@
         }
 
         // TABLES RENDERING
+        const statusBadge = st => {
+            const t = String(st || '');
+            const cls = /^LIVR/i.test(t) ? 'bg-green-900/50 text-green-300 border-green-500/30' : /^ANNUL/i.test(t) ? 'bg-red-900/50 text-red-300 border-red-500/30' : 'bg-amber-900/50 text-amber-300 border-amber-500/30';
+            return `<span class="px-2 py-0.5 text-xs rounded border font-bold ${cls}">${escapeHtml(t)}</span>`;
+        };
+        const waHelpLink = id => {
+            const href = 'https://wa.me/50947519750?text=' + encodeURIComponent("Bonjour, j'ai besoin d'aide pour ma commande " + id);
+            return `<a href="${href}" target="_blank" rel="noopener" class="block mt-1 text-[11px] text-green-400 underline"><i class="fa-brands fa-whatsapp"></i> Aide</a>`;
+        };
+        async function trackOrder() {
+            const el = document.getElementById('track-result');
+            const id = document.getElementById('track-id').value.trim();
+            if (!id) { el.innerHTML = ''; return; }
+            el.innerHTML = '<span class="text-gray-400">Recherche en cours…</span>';
+            try {
+                const o = (await srv('order_track', { id })).order;
+                el.innerHTML = `<div class="p-3 rounded-lg border border-brand-cardBorder bg-brand-card"><p class="text-brand-yellow font-bold font-mono">#${escapeHtml(o.id)}</p><p class="text-gray-300 mt-1">${escapeHtml(o.items)}</p><p class="text-xs text-gray-400 mt-1">${escapeHtml(o.date)} · ${escapeHtml(o.price)}</p><p class="mt-2">${statusBadge(o.status)}${waHelpLink(o.id)}</p></div>`;
+            } catch (err) { el.innerHTML = `<span class="text-red-400">${escapeHtml(err.message || 'Commande introuvable.')}</span>`; }
+        }
+
         function renderOrdersTable() {
             const tbody = document.getElementById('orders-tbody');
             // Un client ne voit que ses propres commandes (compte connecté, ou commandes passées depuis cet appareil)
@@ -2820,7 +2870,7 @@
                     <td class="p-3 text-brand-yellow font-bold">${o.price}</td>
                     <td class="p-3 text-xs text-gray-400">${o.payment}</td>
                     <td class="p-3 text-gray-400 text-xs">${o.date}</td>
-                    <td class="p-3"><span class="px-2 py-0.5 text-xs rounded bg-amber-900/50 text-amber-300 border border-amber-500/30 font-bold">${o.status}</span></td>
+                    <td class="p-3">${statusBadge(o.status)}${waHelpLink(o.id)}</td>
                 </tr>
             `).join('');
         }
@@ -3715,6 +3765,31 @@
             if (!isAdminLoggedIn) return;
             resetsPulledAt = Date.now();
             if (await refreshState()) renderAdminResets();
+        }
+        const AUDIT_LABELS = { order_decide: 'Commande', deposit_decide: 'Dépôt Wallet', reset_decide: 'Mot de passe oublié', promo_write: 'Codes promo', data_write: 'Catalogue / prix', client_block: 'Blocage client', wallet_toggle: 'Wallet client', migrate: 'Migration', purge_legacy: 'Suppression anciennes données', backup_export: 'Sauvegarde' };
+        async function adminBackup() {
+            if (!confirm("Télécharger une sauvegarde de toutes les données ?\nLe fichier contient des informations de clients : gardez-le en lieu sûr.")) return;
+            try {
+                showToast("Sauvegarde en cours…");
+                const out = { exportedAt: new Date().toISOString(), by: adminEmail };
+                for (const part of ['users', 'orders', 'deposits', 'wallet', 'promos', 'resets', 'catalog']) out[part] = (await srv('backup_export', { part })).data;
+                const a = document.createElement('a');
+                a.href = URL.createObjectURL(new Blob([JSON.stringify(out)], { type: 'application/json' }));
+                a.download = 'sauvegarde-mrclown-' + new Date().toISOString().slice(0, 10) + '.json';
+                document.body.appendChild(a); a.click(); a.remove();
+                setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+                showToast("Sauvegarde téléchargée !");
+            } catch (err) { showToast(err.message, "error"); }
+        }
+        async function adminLoadAudit() {
+            const tb = document.getElementById('admin-audit-tbody');
+            try {
+                const j = await srv('audit_list', {});
+                tb.innerHTML = j.entries.length ? j.entries.map(e => {
+                    const txt = Object.entries(e.detail || {}).map(([k, v]) => `${k}: ${v}`).join(' · ');
+                    return `<tr><td class="p-3 text-gray-400">${escapeHtml(new Date(e.ts).toLocaleString('fr-FR'))}</td><td class="p-3 text-white">${escapeHtml(e.who)}</td><td class="p-3 text-gray-300">${escapeHtml(ROLE_LABELS[e.role] || e.role)}</td><td class="p-3 text-brand-yellow font-bold">${escapeHtml(AUDIT_LABELS[e.action] || e.action)}</td><td class="p-3 text-gray-300 break-words">${escapeHtml(txt)}</td></tr>`;
+                }).join('') : '<tr><td colspan="5" class="p-4 text-center text-gray-500">Aucune action enregistrée pour le moment.</td></tr>';
+            } catch (err) { showToast(err.message, "error"); }
         }
         async function adminApproveReset(id) {
             try {
