@@ -1287,8 +1287,9 @@
                     <input type="number" min="50" id="deposit-amount" required placeholder="Ex: 1000" class="w-full bg-brand-dark border border-brand-cardBorder rounded-xl p-3 text-white font-mono text-lg focus:outline-none focus:border-brand-yellow">
                 </div>
                 <div>
-                    <label class="block text-xs text-gray-400 font-bold uppercase mb-1">Réf / Code SMS Natcash</label>
-                    <input type="text" id="deposit-txid" required placeholder="Ex: TXN98124012" class="w-full bg-brand-dark border border-brand-cardBorder rounded-xl p-3 text-white font-mono focus:outline-none focus:border-brand-yellow">
+                    <label class="block text-xs text-gray-400 font-bold uppercase mb-1">Transcode du SMS Natcash</label>
+                    <input type="text" id="deposit-txid" required inputmode="numeric" placeholder="Ex: 26110396226652" class="w-full bg-brand-dark border border-brand-cardBorder rounded-xl p-3 text-white font-mono focus:outline-none focus:border-brand-yellow">
+                    <p class="text-[11px] text-gray-400 mt-1">Copiez le long numéro après « Transcode: » dans votre SMS Natcash (environ 14 chiffres). Ne mettez pas le petit code « kod ». Avec le bon Transcode et le bon montant, votre solde est crédité automatiquement.</p>
                 </div>
 
                 <button type="submit" onclick="playSound('click')" class="w-full py-3.5 bg-brand-yellow text-black font-rajdhani font-extrabold text-lg rounded-xl uppercase tracking-wider shadow-neon-yellow hover:brightness-110 active:scale-95 transition">
@@ -2765,7 +2766,8 @@
         async function handleWalletDepositSubmit(e) {
             e.preventDefault();
             const amount = parseFloat(document.getElementById('deposit-amount').value);
-            const txid = document.getElementById('deposit-txid').value.trim();
+            const txid = document.getElementById('deposit-txid').value.replace(/\s+/g, '');
+            if (!/^\d{8,}$/.test(txid)) { showToast("Entrez le Transcode du SMS Natcash (le long numéro après « Transcode: »), pas le petit code « kod ».", "error"); return; }
             const btn = e.submitter; if (btn) btn.disabled = true;
             let auto = false;
             try {
