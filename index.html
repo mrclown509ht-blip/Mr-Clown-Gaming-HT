@@ -77,6 +77,7 @@
             --grad: linear-gradient(135deg, #F2CF6B 0%, #C99A2E 45%, #F2CF6B 130%);
         }
         html { scroll-behavior: smooth; }
+        html, body { max-width: 100%; overflow-x: clip; }
         body {
             font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
             background-color: var(--bg);
@@ -287,7 +288,7 @@
             .mc-header > div > div:last-child { width: 100%; justify-content: center; flex-wrap: wrap; }
         }
         .mc-hero { background: transparent; border: 0; box-shadow: none; border-radius: 0; text-align: center; padding: 2.5rem 0 1rem; overflow: visible; }
-        .mc-hero::before { top: -150px; left: 50%; right: auto; margin-left: -260px; background: radial-gradient(circle, rgba(242, 207, 107, .2), transparent 68%); }
+        .mc-hero::before { top: -150px; left: 50%; right: auto; margin-left: 0; transform: translateX(-50%); width: min(520px, 100%); height: min(520px, 100vw); background: radial-gradient(circle, rgba(242, 207, 107, .2), transparent 68%); }
         .mc-hero::after { display: none; }
         .mc-hero-grid { grid-template-columns: 1fr !important; justify-items: center; }
         .mc-hero h2 { font-size: clamp(2.8rem, 11vw, 4rem); line-height: 1.08; margin: 0; }
