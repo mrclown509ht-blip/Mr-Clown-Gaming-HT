@@ -10,6 +10,19 @@ const ROLE_LABELS = { admin: 'ADMINISTRATEUR', manager: 'GÉRANT COMMANDES & FIN
 // Seuls ces deux rôles existent. Tout autre rôle présent dans MANAGERS est refusé.
 const STAFF_ROLES = new Set(['admin', 'manager']);
 const staffOf = email => { const m = L.managers()[email]; return m && STAFF_ROLES.has(m.role) ? m : null; };
+// Les numéros de commande commencent par les lettres du produit commandé (ex : DS-123456 pour Dream League Soccer)
+const ORDER_PREFIX = { freefire: 'FF', pubg: 'PM', bloodstrike: 'BS', arena: 'AB', arenainf: 'AI', flexcity: 'FC', onestate: 'OS', dls: 'DS', deltaforce: 'DF', efootball: 'EF' };
+function orderPrefix(firstProduct, cat) {
+    const key = L.productGame(firstProduct);
+    if (ORDER_PREFIX[key]) return ORDER_PREFIX[key];
+    // jeu ajouté plus tard : initiales du nom (première lettre du premier et du dernier mot, ou 2 premières lettres)
+    const g = cat.games.find(x => x.key === key);
+    const words = String((g && g.name) || key).normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^A-Za-z0-9 ]/g, ' ')
+        .split(/\s+/).filter(w => w && !/^(RP|HT)$/i.test(w));
+    const raw = words.length >= 2 ? words[0][0] + words[words.length - 1][0] : (words[0] || '').slice(0, 2);
+    const pre = raw.toUpperCase().replace(/[^A-Z]/g, '');
+    return pre.length >= 2 ? pre : 'MC';
+}
 const FINAL = status => /^LIVR[ÉE]/i.test(status || '') || /^ANNUL/i.test(status || '');
 const rid = () => crypto.randomBytes(5).toString('hex');
 const normTx = c => String(c || '').replace(/\s+/g, '').toUpperCase();
@@ -231,7 +244,7 @@ async function orderCreate(ctx, req, b) {
     // Identifiant de commande unique
     let id;
     for (let i = 0; i < 20; i++) {
-        id = 'FF-' + (100000 + crypto.randomInt(900000));
+        id = orderPrefix(items[0].p, cat) + '-' + (100000 + crypto.randomInt(900000));
         if (await db.create('sec/oidx/' + id, user ? ctx.ukey : '_guest')) break;
         id = null;
     }
@@ -304,7 +317,7 @@ async function guestOrders(b) {
     const out = [];
     for (const it of arr(b.items).slice(0, 40)) {
         const id = str(it.id, 20);
-        if (!/^FF-\d{6}$/.test(id)) continue;
+        if (!/^[A-Z]{2,4}-\d{6}$/.test(id)) continue;
         const o = await db.get(`sec/orders/_guest/${id}`);
         if (!o || !o.gsecret) continue;
         const a = Buffer.from(String(it.gsecret || '')), c = Buffer.from(o.gsecret);
