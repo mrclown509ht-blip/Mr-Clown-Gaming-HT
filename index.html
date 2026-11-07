@@ -2845,7 +2845,7 @@
         // TABLES RENDERING
         const orderKind = st => {
             const t = String(st || '');
-            return /^LIVR[ÉE]E?$/i.test(t) ? 'done' : /^ANNUL/i.test(t) ? 'cancel' : /LIVRAISON|EN COURS/i.test(t) ? 'progress' : 'wait';
+            return /^LIVR[ÉE]/i.test(t) ? 'done' : /^ANNUL/i.test(t) ? 'cancel' : /^LIVRAISON|EN COURS/i.test(t) ? 'progress' : 'wait';
         };
         const statusBadge = st => {
             const t = String(st || '');
