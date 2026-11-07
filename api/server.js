@@ -34,7 +34,28 @@ const pub = u => ({
     ...(u.blocked ? { blocked: true } : {}),
     ...(u.walletOff ? { walletOff: true } : {})
 });
-const stripOrder = o => { const { gsecret, ...rest } = o; return rest; };
+const stripOrder = o => { const { gsecret, cred, ...rest } = o; return rest; };
+
+// Identifiants de jeu des packs « sans ID » : chiffrés (AES-256-GCM), jamais renvoyés aux clients, supprimés après traitement
+const credKey = () => { const k = process.env.CRED_SECRET || ''; return k ? crypto.createHash('sha256').update('cred:' + k).digest() : null; };
+function sealCreds(obj) {
+    const key = credKey();
+    if (!key) fail(503, 'config', 'Ce type de commande est momentanément indisponible. Contactez le support.');
+    const iv = crypto.randomBytes(12);
+    const c = crypto.createCipheriv('aes-256-gcm', key, iv);
+    const ct = Buffer.concat([c.update(JSON.stringify(obj), 'utf8'), c.final()]);
+    return 'v1:' + [iv, c.getAuthTag(), ct].map(x => x.toString('base64')).join(':');
+}
+function openCreds(str0) {
+    const key = credKey();
+    if (!key || !String(str0 || '').startsWith('v1:')) return null;
+    try {
+        const [iv, tag, ct] = String(str0).slice(3).split(':').map(x => Buffer.from(x, 'base64'));
+        const d = crypto.createDecipheriv('aes-256-gcm', key, iv);
+        d.setAuthTag(tag);
+        return JSON.parse(Buffer.concat([d.update(ct), d.final()]).toString('utf8'));
+    } catch (e) { return null; }
+}
 
 // ------------------------------------------------------------------ authentification
 const bearer = req => { const h = String(req.headers.authorization || ''); return h.startsWith('Bearer ') ? h.slice(7) : ''; };
@@ -197,7 +218,7 @@ async function orderCreate(ctx, req, b) {
     // Jeu ou dossier « sans ID » : pas d'ID de compte demandé (infos de contact dans extraInfo)
     const gameOf = p => cat.games.find(g => g.key === L.productGame(p)) || {};
     const sectionOf = p => Object.values(gameOf(p).sections || {}).find(x => x.key === (p.section || 'std')) || {};
-    const NOID_BUILTIN = ['efootball:std', 'dls:jetons'];
+    const NOID_BUILTIN = ['efootball:std', 'dls:jetons', 'dlsjetons:std'];
     const noId = p => !!(gameOf(p).noId || sectionOf(p).noId || NOID_BUILTIN.includes(L.productGame(p) + ':' + (p.section || 'std')));
     const items = lines.map(l => {
         const p = all.find(x => x.id === Number(l.id));
@@ -210,14 +231,26 @@ async function orderCreate(ctx, req, b) {
             pid = digits(l.pid);
             if (!/^\d{6,15}$/.test(pid)) fail(400, 'bad_pid', `ID de compte invalide pour : ${L.productName(p)}.`);
         }
-        return { p, qty, pid, pname: str(l.pname, 40) };
+        let login = null;
+        if (noId(p)) {
+            const lg = l.login || {};
+            const email = str(lg.email, 120).trim(), password = str(lg.password, 100), whatsapp = digits(lg.whatsapp);
+            const label = L.productName(p);
+            if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) fail(400, 'bad_login', `Adresse e-mail invalide pour : ${label}.`);
+            if (password.length < 4) fail(400, 'bad_login', `Mot de passe requis pour : ${label}.`);
+            if (!/^\d{8,15}$/.test(whatsapp)) fail(400, 'bad_login', `Numéro WhatsApp invalide pour : ${label}.`);
+            login = { email, password, whatsapp };
+        }
+        return { p, qty, pid, pname: str(l.pname, 40), login };
     });
     const subtotal = items.reduce((s, i) => s + Number(i.p.price) * i.qty, 0);
 
     // Infos supplémentaires exigées par certains jeux
     const extra = str(b.extraInfo, 120);
-    const needs = items.flatMap(i => [gameOf(i.p).needsExtra, sectionOf(i.p).needsExtra]).filter(Boolean);
+    const needs = items.filter(i => !i.login).flatMap(i => [gameOf(i.p).needsExtra, sectionOf(i.p).needsExtra]).filter(Boolean);
     if (needs.length && !extra) fail(400, 'extra_required', 'Information requise : ' + [...new Set(needs)].join(' + ') + '.');
+    const credList = items.filter(i => i.login).map(i => ({ pack: L.productName(i.p), qty: i.qty, ...i.login }));
+    const sealed = credList.length ? sealCreds(credList) : ''; // avant tout débit : si la clé manque, la commande est refusée proprement
 
     // Code promo
     const promoCode = L.normalizePromoCode(b.promoCode);
@@ -302,6 +335,7 @@ async function orderCreate(ctx, req, b) {
     if (promo && discount > 0) { order.promoCode = promoCode; order.discount = discount; }
     if (rankDiscount > 0) { order.rankName = rankName; order.rankDiscount = rankDiscount; }
     if (extra) order.extraInfo = extra;
+    if (sealed) { order.cred = sealed; order.hasCred = true; }
     let gsecret = '';
     if (!user) { gsecret = crypto.randomBytes(12).toString('hex'); order.gsecret = gsecret; }
     try {
@@ -336,6 +370,7 @@ async function orderDecide(ctx, b) {
         if (!o) fail(404, 'not_found', 'Commande introuvable.');
         if (FINAL(o.status)) fail(409, 'final', 'Cette commande est déjà traitée (' + o.status + ').');
         o.status = approve ? 'LIVRÉ ✅' : 'ANNULÉ ❌';
+        delete o.cred; o.hasCred = false;
         return o;
     });
     // Commande payée avec Mr Wallet puis annulée : remboursement automatique
@@ -736,8 +771,21 @@ async function purgeLegacy(ctx, b) {
     return { ok: true };
 }
 
+// ------------------------------------------------------------------ identifiants d'une commande (personnel seulement)
+async function orderCredentials(ctx, b) {
+    needStaff(ctx, ['admin', 'manager']);
+    const id = str(b.id, 20);
+    const owner = await db.get('sec/oidx/' + id);
+    const o = owner ? await db.get(`sec/orders/${owner}/${id}`) : null;
+    if (!o) fail(404, 'not_found', 'Commande introuvable.');
+    if (!o.cred) fail(404, 'no_cred', 'Aucun identifiant enregistré (supprimés après le traitement de la commande).');
+    const creds = openCreds(o.cred);
+    if (!creds) fail(500, 'cred_error', 'Impossible de déchiffrer les identifiants.');
+    return { creds };
+}
+
 // ------------------------------------------------------------------ journal des actions des gérants
-const AUDITED = new Set(['order_decide', 'deposit_decide', 'reset_decide', 'promo_write', 'data_write', 'client_block', 'wallet_toggle', 'migrate', 'purge_legacy']);
+const AUDITED = new Set(['order_credentials', 'order_decide', 'deposit_decide', 'reset_decide', 'promo_write', 'data_write', 'client_block', 'wallet_toggle', 'migrate', 'purge_legacy']);
 function auditDetail(b, out) {
     const d = {};
     ['id', 'decision', 'key', 'email', 'blocked', 'off', 'code'].forEach(k => {
@@ -781,6 +829,9 @@ async function backupExport(ctx, b) {
     const data = await db.get(paths[part]);
     if ((part === 'users' || part === 'resets') && data && typeof data === 'object') {
         for (const k of Object.keys(data)) { const u = { ...data[k] }; delete u.pw; delete u.tv; data[k] = u; }
+    }
+    if (part === 'orders' && data && typeof data === 'object') {
+        Object.values(data).forEach(m => Object.values(m || {}).forEach(o => { if (o && o.cred) delete o.cred; }));
     }
     if (part === 'users') await auditLog(ctx, { action: 'backup_export' }, null).catch(() => {});
     return { part, data };
@@ -834,6 +885,7 @@ module.exports = async (req, res) => {
             case 'migrate': out = await migrate(ctx); break;
             case 'purge_legacy': out = await purgeLegacy(ctx, b); break;
             case 'audit_list': out = await auditList(ctx); break;
+            case 'order_credentials': out = await orderCredentials(ctx, b); break;
             case 'backup_export': out = await backupExport(ctx, b); break;
             case 'order_track': out = await orderTrack(req, b); break;
             default: fail(400, 'bad_action', 'Action inconnue.');
