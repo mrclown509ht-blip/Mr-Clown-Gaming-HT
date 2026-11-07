@@ -1495,7 +1495,7 @@
         const productSection = p => p.section || 'std';
         // Un pack « sans ID » (jeu ou dossier marqué noId) ne demande pas d'ID de compte dans le panier
         const sectionDef = p => { const g = GAMES.find(x => x.key === productGame(p)); return g && Object.values(g.sections || {}).find(s => s.key === productSection(p)); };
-        const NOID_BUILTIN = ['efootball:std', 'dls:jetons'];
+        const NOID_BUILTIN = ['efootball:std', 'dls:jetons', 'dlsjetons:std'];
         const productNoId = p => { const g = GAMES.find(x => x.key === productGame(p)); const s = sectionDef(p); return !!((g && g.noId) || (s && s.noId) || NOID_BUILTIN.includes(productGame(p) + ':' + productSection(p))); };
         let shopGame = 'freefire';
         let shopSection = 'std';
@@ -2458,6 +2458,7 @@
         function extraRequirements() {
             const out = [];
             cart.forEach(i => {
+                if (productNoId(i)) return;
                 const g = GAMES.find(x => x.key === i.game);
                 const s = sectionDef(i);
                 [g && g.needsExtra, s && s.needsExtra].forEach(t => { if (t && !out.includes(t)) out.push(t); });
@@ -2511,7 +2512,8 @@
         }
 
         function saveCart() {
-            localStorage.setItem('mrclown_cart', JSON.stringify(cart));
+            // le mot de passe de jeu n'est jamais écrit dans le stockage du navigateur
+            localStorage.setItem('mrclown_cart', JSON.stringify(cart.map(i => i.login ? { ...i, login: { email: i.login.email, whatsapp: i.login.whatsapp } } : i)));
         }
 
         function renderCartUI() {
@@ -2591,7 +2593,7 @@
                                 </button>
                             </div>
                         </div>
-                        ${productNoId(item) ? `<p class="pt-3 border-t border-brand-cardBorder text-[11px] text-gray-400">Aucun ID de compte pour ce pack : indiquez le contact demandé dans « Infos supplémentaires ».</p>` : `                        <div class="pt-3 border-t border-brand-cardBorder space-y-1.5">
+                        ${productNoId(item) ? loginFormHtml(item) : `                        <div class="pt-3 border-t border-brand-cardBorder space-y-1.5">
                             <label for="cart-pid-${item.id}" class="block text-[11px] text-brand-yellow font-bold uppercase">ID du compte${gameDef ? ' ' + escapeHtml(gameDef.name) : ''} pour ce pack *</label>
                             <div class="flex gap-2">
                                 <input type="text" inputmode="numeric" autocomplete="off" id="cart-pid-${item.id}" value="${escapeHtml(item.pid || '')}" placeholder="Ex: 2849104928" oninput="onItemPidInput(${item.id}, this)" class="flex-grow min-w-0 bg-brand-card border border-brand-cardBorder rounded-lg p-2.5 text-white font-mono text-sm focus:outline-none focus:border-brand-yellow">
@@ -2625,6 +2627,35 @@
             if (!el) return;
             el.innerText = text;
             el.className = `text-[11px] ${cls} font-bold font-mono break-words`;
+        }
+
+        function loginFormHtml(item) {
+            const lg = item.login || {};
+            const inp = 'w-full bg-brand-dark border border-brand-cardBorder rounded-xl p-3 text-white focus:outline-none focus:border-brand-yellow';
+            const lab = 'block text-sm font-bold text-white mb-1';
+            return `<div class="pt-3 border-t border-brand-cardBorder space-y-3">
+                <div><label class="${lab}" for="cart-lg-email-${item.id}">Adresse e-mail <span class="text-red-400">*</span></label>
+                    <input type="email" id="cart-lg-email-${item.id}" value="${escapeHtml(lg.email || '')}" oninput="onLoginInput(${item.id}, 'email', this)" autocomplete="off" autocapitalize="off" class="${inp}"></div>
+                <div><label class="${lab}" for="cart-lg-password-${item.id}">Mot de passe <span class="text-red-400">*</span></label>
+                    <div class="relative"><input type="password" id="cart-lg-password-${item.id}" value="${escapeHtml(lg.password || '')}" oninput="onLoginInput(${item.id}, 'password', this)" autocomplete="off" class="${inp} pr-12">
+                    <button type="button" onclick="toggleLoginPw(${item.id})" aria-label="Afficher le mot de passe" class="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400"><i class="fa-solid fa-eye"></i></button></div></div>
+                <div><label class="${lab}" for="cart-lg-whatsapp-${item.id}">Numéro WhatsApp <span class="text-red-400">*</span></label>
+                    <input type="tel" inputmode="tel" id="cart-lg-whatsapp-${item.id}" value="${escapeHtml(lg.whatsapp || '')}" oninput="onLoginInput(${item.id}, 'whatsapp', this)" autocomplete="off" placeholder="Ex : 50937000000" class="${inp}"></div>
+                <p class="text-[11px] text-gray-400"><i class="fa-solid fa-lock"></i> Ces informations servent uniquement à effectuer la recharge : elles sont chiffrées, visibles seulement par notre équipe, et supprimées dès que la commande est livrée ou annulée. Pensez à changer votre mot de passe après la livraison.</p>
+            </div>`;
+        }
+        function onLoginInput(productId, field, el) {
+            const item = cart.find(i => i.id === productId);
+            if (!item) return;
+            if (field === 'whatsapp') { const c = el.value.replace(/[^\d+]/g, ''); if (c !== el.value) el.value = c; }
+            el.style.borderColor = '';
+            item.login = item.login || {};
+            item.login[field] = el.value;
+            saveCart();
+        }
+        function toggleLoginPw(productId) {
+            const el = document.getElementById('cart-lg-password-' + productId);
+            if (el) el.type = el.type === 'password' ? 'text' : 'password';
         }
 
         function onItemPidInput(productId, el) {
@@ -2667,6 +2698,20 @@
             }
 
             for (const item of cart) {
+                if (productNoId(item)) {
+                    const lg = item.login || {};
+                    const label = item.fullName || item.title || 'ce pack';
+                    const bad = !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(String(lg.email || '').trim()) ? 'email'
+                        : String(lg.password || '').length < 4 ? 'password'
+                        : String(lg.whatsapp || '').replace(/\D/g, '').length < 8 ? 'whatsapp' : '';
+                    if (bad) {
+                        showToast(`Renseignez l'e-mail, le mot de passe et le numéro WhatsApp pour : ${label}`, "error");
+                        const el = document.getElementById(`cart-lg-${bad}-${item.id}`);
+                        if (el) { el.style.borderColor = '#ef4444'; el.scrollIntoView({ block: 'center', behavior: 'smooth' }); el.focus(); }
+                        return;
+                    }
+                    continue;
+                }
                 if (!productNoId(item) && !isValidPlayerId(item.pid)) {
                     const label = item.fullName ? item.fullName : (item.category === 'diamonds' ? `${item.total} Diamants` : item.title);
                     showToast(`Saisissez l'ID du compte pour : ${label}`, "error");
@@ -2728,7 +2773,9 @@
         async function placeOrder(method, txid) {
             const lines = cart.map(i => {
                 const pid = productNoId(i) ? '' : String(i.pid || '').trim();
-                return { id: i.id, qty: i.qty, pid, pname: (i.pnameId === pid && i.pname) ? i.pname : '' };
+                const line = { id: i.id, qty: i.qty, pid, pname: (i.pnameId === pid && i.pname) ? i.pname : '' };
+                if (productNoId(i)) line.login = { email: (i.login || {}).email || '', password: (i.login || {}).password || '', whatsapp: (i.login || {}).whatsapp || '' };
+                return line;
             });
             const j = await srv('order_create', {
                 lines, payment: method, txid: txid || '', promoCode: appliedPromoCode,
@@ -2927,8 +2974,23 @@
                     <div><span class="text-[11px] text-gray-500 uppercase font-bold">ID joueur / contact</span> <span class="text-white font-bold font-mono">${orderPlayerCell(o)}</span></div>
                 </div>
                 <div class="mt-3 rounded-xl px-4 py-3 text-sm font-semibold flex items-center gap-2 ${st.banner}"><i class="fa-solid ${st.icon}"></i> <span class="min-w-0 break-words">${escapeHtml(note)}</span></div>
+                ${o.hasCred && todo ? `<button type="button" onclick="adminShowCreds('${escapeHtml(o.id)}'); playSound('click');" class="w-full mt-3 border border-brand-yellow text-brand-yellow font-bold py-2 rounded-xl text-sm"><i class="fa-solid fa-key mr-1"></i> Voir les identifiants du compte</button><div id="cred-${escapeHtml(o.id)}" class="hidden mt-2"></div>` : ''}
                 ${actions}
             </div>`;
+        }
+        async function adminShowCreds(id) {
+            const box = document.getElementById('cred-' + id);
+            if (!box) return;
+            try {
+                const j = await srv('order_credentials', { id });
+                box.innerHTML = j.creds.map(c => `<div class="rounded-xl border border-brand-cardBorder bg-brand-dark p-3 text-sm space-y-1">
+                    <div class="text-white font-bold">${escapeHtml(c.pack)} (x${escapeHtml(c.qty)})</div>
+                    <div><span class="text-[11px] text-gray-500 uppercase font-bold">E-mail</span> <span class="text-white font-mono select-all break-all">${escapeHtml(c.email)}</span></div>
+                    <div><span class="text-[11px] text-gray-500 uppercase font-bold">Mot de passe</span> <span class="text-white font-mono select-all break-all">${escapeHtml(c.password)}</span></div>
+                    <div><span class="text-[11px] text-gray-500 uppercase font-bold">WhatsApp</span> <a class="text-green-400 underline font-mono" target="_blank" rel="noopener" href="https://wa.me/${escapeHtml(c.whatsapp)}">${escapeHtml(c.whatsapp)}</a></div>
+                </div>`).join('') + '<p class="text-[11px] text-amber-300 mt-1">Supprimés automatiquement quand vous appuyez sur Livrer ou Annuler.</p>';
+                box.classList.remove('hidden');
+            } catch (err) { showToast(err.message, 'error'); }
         }
         function renderAdminOrdersCards() {
             const box = document.getElementById('admin-orders-cards');
@@ -3574,11 +3636,11 @@
               cur: [[18, 50], [30, 60], [60, 170], [320, 550], [460, 700], [750, 1200], [1480, 3200], [1980, 3600], [3950, 6500]],
               pass: [['Season Pass Operations Special', 600], ['Season Pass Warfare Special', 650], ['Season Pass Delta Force Deluxe', 850]] },
             { game: { key: 'efootball', name: 'eFootball', icon: 'fa-futbol',
-                      note: "Indiquez votre numéro WhatsApp avec l'indicatif (ex : 50937000000) dans « Infos supplémentaires ». Notre équipe vous contacte pour finaliser la recharge. Ne mettez jamais votre mot de passe dans la commande." },
-              section: { key: 'std', label: 'Coins', noId: true, needsExtra: 'Numéro WhatsApp (eFootball)' }, dropGameExtra: true, unit: 'Coins',
+                      note: "Pour effectuer la recharge, nous avons besoin de l'e-mail, du mot de passe et du numéro WhatsApp de votre compte. Ces informations sont chiffrées, visibles seulement par notre équipe et supprimées après la livraison." },
+              section: { key: 'std', label: 'Coins', noId: true }, dropGameExtra: true, unit: 'Coins',
               cur: [[130, 200], [300, 500], [550, 780], [750, 1050], [1040, 1450], [2130, 3000], [3250, 4450], [5700, 7500], [12800, 16000]], pass: [] },
             { game: { key: 'dls', name: 'Dream League Soccer 2026', icon: 'fa-futbol' },
-              section: { key: 'jetons', label: 'Jetons', noId: true, needsExtra: 'Numéro WhatsApp (DLS Jetons)' }, unit: 'Jetons',
+              section: { key: 'jetons', label: 'Jetons', noId: true }, unit: 'Jetons',
               cur: [[900, 500], [1950, 950], [3450, 1500], [6700, 2900], [14500, 4700], [40500, 10000]], pass: [] }
         ];
         // Compte (apply = false) ou applique (apply = true) les ajouts et corrections nécessaires
@@ -3594,7 +3656,7 @@
                 if (!g) { n++; if (apply) { g = { ...x.game, sections: [] }; GAMES.push(g); } }
                 let s = g && Object.values(g.sections || {}).find(y => y.key === x.section.key);
                 if (!s) { n++; if (apply) { s = { ...x.section }; g.sections = Object.values(g.sections || {}); g.sections.push(s); } }
-                else if (x.section.noId && !s.noId) { n++; if (apply) { s.noId = true; s.needsExtra = x.section.needsExtra; } }
+                else if (x.section.noId && !s.noId) { n++; if (apply) { s.noId = true; delete s.needsExtra; } }
                 if (g && x.dropGameExtra && g.needsExtra) { n++; if (apply) delete g.needsExtra; }
                 if (!GAME_CATALOG.some(p => p.game === x.game.key && productSection(p) === x.section.key)) {
                     n++;
@@ -3837,7 +3899,7 @@
             resetsPulledAt = Date.now();
             if (await refreshState()) renderAdminResets();
         }
-        const AUDIT_LABELS = { order_decide: 'Commande', deposit_decide: 'Dépôt Wallet', reset_decide: 'Mot de passe oublié', promo_write: 'Codes promo', data_write: 'Catalogue / prix', client_block: 'Blocage client', wallet_toggle: 'Wallet client', migrate: 'Migration', purge_legacy: 'Suppression anciennes données', backup_export: 'Sauvegarde' };
+        const AUDIT_LABELS = { order_decide: 'Commande', deposit_decide: 'Dépôt Wallet', reset_decide: 'Mot de passe oublié', promo_write: 'Codes promo', data_write: 'Catalogue / prix', client_block: 'Blocage client', wallet_toggle: 'Wallet client', migrate: 'Migration', purge_legacy: 'Suppression anciennes données', backup_export: 'Sauvegarde', order_credentials: 'Consultation identifiants de jeu' };
         async function adminBackup() {
             if (!confirm("Télécharger une sauvegarde de toutes les données ?\nLe fichier contient des informations de clients : gardez-le en lieu sûr.")) return;
             try {
