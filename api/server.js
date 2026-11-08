@@ -219,7 +219,10 @@ async function orderCreate(ctx, req, b) {
     const gameOf = p => cat.games.find(g => g.key === L.productGame(p)) || {};
     const sectionOf = p => Object.values(gameOf(p).sections || {}).find(x => x.key === (p.section || 'std')) || {};
     const NOID_BUILTIN = ['efootball:std', 'dls:jetons', 'dlsjetons:std'];
-    const noId = p => !!(gameOf(p).noId || sectionOf(p).noId || NOID_BUILTIN.includes(L.productGame(p) + ':' + (p.section || 'std')));
+    // Packs sans ID ni mot de passe : seul le numéro WhatsApp du client est demandé (pour le contacter)
+    const WAONLY_BUILTIN = ['dls:std', 'flexcity:pass'];
+    const waOnly = p => !!(gameOf(p).waOnly || sectionOf(p).waOnly || WAONLY_BUILTIN.includes(L.productGame(p) + ':' + (p.section || 'std')));
+    const noId = p => !!(waOnly(p) || gameOf(p).noId || sectionOf(p).noId || NOID_BUILTIN.includes(L.productGame(p) + ':' + (p.section || 'std')));
     const items = lines.map(l => {
         const p = all.find(x => x.id === Number(l.id));
         if (!p) fail(409, 'product_gone', "Un article du panier n'existe plus : actualisez le panier.");
@@ -232,7 +235,11 @@ async function orderCreate(ctx, req, b) {
             if (!/^\d{6,15}$/.test(pid)) fail(400, 'bad_pid', `ID de compte invalide pour : ${L.productName(p)}.`);
         }
         let login = null;
-        if (noId(p)) {
+        if (waOnly(p)) {
+            const wa = digits((l.login || {}).whatsapp);
+            if (!/^\d{8,15}$/.test(wa)) fail(400, 'bad_login', `Numéro WhatsApp invalide pour : ${L.productName(p)}.`);
+            pid = wa; // le numéro WhatsApp tient lieu d'ID de contact dans la commande
+        } else if (noId(p)) {
             const lg = l.login || {};
             const email = str(lg.email, 120).trim(), password = str(lg.password, 100), whatsapp = digits(lg.whatsapp);
             const label = L.productName(p);
@@ -241,13 +248,13 @@ async function orderCreate(ctx, req, b) {
             if (!/^\d{8,15}$/.test(whatsapp)) fail(400, 'bad_login', `Numéro WhatsApp invalide pour : ${label}.`);
             login = { email, password, whatsapp };
         }
-        return { p, qty, pid, pname: str(l.pname, 40), login };
+        return { p, qty, pid, pname: str(l.pname, 40), login, skipExtra: noId(p) };
     });
     const subtotal = items.reduce((s, i) => s + Number(i.p.price) * i.qty, 0);
 
     // Infos supplémentaires exigées par certains jeux
     const extra = str(b.extraInfo, 120);
-    const needs = items.filter(i => !i.login).flatMap(i => [gameOf(i.p).needsExtra, sectionOf(i.p).needsExtra]).filter(Boolean);
+    const needs = items.filter(i => !i.skipExtra).flatMap(i => [gameOf(i.p).needsExtra, sectionOf(i.p).needsExtra]).filter(Boolean);
     if (needs.length && !extra) fail(400, 'extra_required', 'Information requise : ' + [...new Set(needs)].join(' + ') + '.');
     const credList = items.filter(i => i.login).map(i => ({ pack: L.productName(i.p), qty: i.qty, ...i.login }));
     const sealed = credList.length ? sealCreds(credList) : ''; // avant tout débit : si la clé manque, la commande est refusée proprement
