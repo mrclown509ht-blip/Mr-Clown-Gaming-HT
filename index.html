@@ -1496,7 +1496,10 @@
         // Un pack « sans ID » (jeu ou dossier marqué noId) ne demande pas d'ID de compte dans le panier
         const sectionDef = p => { const g = GAMES.find(x => x.key === productGame(p)); return g && Object.values(g.sections || {}).find(s => s.key === productSection(p)); };
         const NOID_BUILTIN = ['efootball:std', 'dls:jetons', 'dlsjetons:std'];
-        const productNoId = p => { const g = GAMES.find(x => x.key === productGame(p)); const s = sectionDef(p); return !!((g && g.noId) || (s && s.noId) || NOID_BUILTIN.includes(productGame(p) + ':' + productSection(p))); };
+        // Packs sans ID ni mot de passe : on demande seulement le numéro WhatsApp du client
+        const WAONLY_BUILTIN = ['dls:std', 'flexcity:pass'];
+        const productWaOnly = p => { const g = GAMES.find(x => x.key === productGame(p)); const s = sectionDef(p); return !!((g && g.waOnly) || (s && s.waOnly) || WAONLY_BUILTIN.includes(productGame(p) + ':' + productSection(p))); };
+        const productNoId = p => { const g = GAMES.find(x => x.key === productGame(p)); const s = sectionDef(p); return !!(productWaOnly(p) || (g && g.noId) || (s && s.noId) || NOID_BUILTIN.includes(productGame(p) + ':' + productSection(p))); };
         let shopGame = 'freefire';
         let shopSection = 'std';
         let cartExtraInfo = localStorage.getItem('mrclown_cart_extra') || '';
@@ -2633,6 +2636,13 @@
             const lg = item.login || {};
             const inp = 'w-full bg-brand-dark border border-brand-cardBorder rounded-xl p-3 text-white focus:outline-none focus:border-brand-yellow';
             const lab = 'block text-sm font-bold text-white mb-1';
+            if (productWaOnly(item)) {
+                return `<div class="pt-3 border-t border-brand-cardBorder space-y-2">
+                    <label class="${lab}" for="cart-lg-whatsapp-${item.id}">Numéro WhatsApp <span class="text-red-400">*</span></label>
+                    <input type="tel" inputmode="tel" id="cart-lg-whatsapp-${item.id}" value="${escapeHtml(lg.whatsapp || '')}" oninput="onLoginInput(${item.id}, 'whatsapp', this)" autocomplete="off" placeholder="Ex : 50937000000" class="${inp}">
+                    <p class="text-[11px] text-gray-400"><i class="fa-brands fa-whatsapp"></i> Pas d'ID nécessaire pour ce pack : notre équipe vous contactera sur WhatsApp pour finaliser la livraison.</p>
+                </div>`;
+            }
             return `<div class="pt-3 border-t border-brand-cardBorder space-y-3">
                 <div><label class="${lab}" for="cart-lg-email-${item.id}">Adresse e-mail <span class="text-red-400">*</span></label>
                     <input type="email" id="cart-lg-email-${item.id}" value="${escapeHtml(lg.email || '')}" oninput="onLoginInput(${item.id}, 'email', this)" autocomplete="off" autocapitalize="off" class="${inp}"></div>
@@ -2701,11 +2711,13 @@
                 if (productNoId(item)) {
                     const lg = item.login || {};
                     const label = item.fullName || item.title || 'ce pack';
-                    const bad = !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(String(lg.email || '').trim()) ? 'email'
+                    const waOnlyItem = productWaOnly(item);
+                    const bad = waOnlyItem ? (String(lg.whatsapp || '').replace(/\D/g, '').length < 8 ? 'whatsapp' : '')
+                        : !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(String(lg.email || '').trim()) ? 'email'
                         : String(lg.password || '').length < 4 ? 'password'
                         : String(lg.whatsapp || '').replace(/\D/g, '').length < 8 ? 'whatsapp' : '';
                     if (bad) {
-                        showToast(`Renseignez l'e-mail, le mot de passe et le numéro WhatsApp pour : ${label}`, "error");
+                        showToast(waOnlyItem ? `Renseignez votre numéro WhatsApp pour : ${label}` : `Renseignez l'e-mail, le mot de passe et le numéro WhatsApp pour : ${label}`, "error");
                         const el = document.getElementById(`cart-lg-${bad}-${item.id}`);
                         if (el) { el.style.borderColor = '#ef4444'; el.scrollIntoView({ block: 'center', behavior: 'smooth' }); el.focus(); }
                         return;
@@ -2774,7 +2786,8 @@
             const lines = cart.map(i => {
                 const pid = productNoId(i) ? '' : String(i.pid || '').trim();
                 const line = { id: i.id, qty: i.qty, pid, pname: (i.pnameId === pid && i.pname) ? i.pname : '' };
-                if (productNoId(i)) line.login = { email: (i.login || {}).email || '', password: (i.login || {}).password || '', whatsapp: (i.login || {}).whatsapp || '' };
+                if (productWaOnly(i)) line.login = { whatsapp: (i.login || {}).whatsapp || '' };
+                else if (productNoId(i)) line.login = { email: (i.login || {}).email || '', password: (i.login || {}).password || '', whatsapp: (i.login || {}).whatsapp || '' };
                 return line;
             });
             const j = await srv('order_create', {
@@ -3469,6 +3482,13 @@
                 const on = s.key === admSection;
                 return `<button type="button" onclick="adminSelectSection('${s.key}'); playSound('click');" class="px-3 py-1 rounded-lg text-xs font-bold ${on ? 'bg-brand-red/20 border border-brand-yellow text-brand-yellow' : 'bg-brand-card border border-brand-cardBorder text-gray-400'}">${escapeHtml(s.label)}</button>`;
             }).join('') + `<button type="button" onclick="adminAddSection()" class="${btn} !text-green-400"><i class="fa-solid fa-folder-plus mr-1"></i>Nouveau dossier</button><button type="button" onclick="adminRenameSection()" class="${btn}"><i class="fa-solid fa-pen mr-1"></i>Renommer</button><button type="button" onclick="adminDeleteSection()" class="${btn} !text-red-400"><i class="fa-solid fa-trash-can mr-1"></i>Supprimer</button></div>`;
+            {
+                const probe = { game: game.key, section: admSection };
+                const eff = productWaOnly(probe) ? 'wa' : productNoId(probe) ? 'login' : 'id';
+                const opt = (v, label) => `<option value="${v}" ${eff === v ? 'selected' : ''}>${label}</option>`;
+                html += `<div class="flex flex-wrap items-center gap-2 border-t border-brand-cardBorder pt-3"><span class="text-[10px] text-gray-400 font-bold uppercase"><i class="fa-solid fa-id-card mr-1"></i>Infos demandées au client (dossier « ${escapeHtml(admCurSection().label)} »)</span>
+                    <select onchange="adminSetSectionMode(this.value)" class="${AINP} !w-auto">${opt('id', "ID du joueur (par défaut)")}${opt('wa', 'Numéro WhatsApp seul (pas d\'ID)')}${opt('login', 'E-mail + mot de passe + WhatsApp (pas d\'ID)')}</select></div>`;
+            }
             html += `<div class="flex flex-wrap items-end gap-2 border-t border-brand-cardBorder pt-3"><span class="text-[10px] text-gray-400 font-bold uppercase self-center"><i class="fa-solid fa-percent mr-1"></i>Réductions</span>
                 <input type="number" id="disc-pct" min="1" max="90" placeholder="% (ex : 15)" class="${AINP} !w-28">
                 <select id="disc-scope" class="${AINP} !w-auto"><option value="section">Tout ce dossier</option><option value="game">Tout ce jeu</option></select>
@@ -3579,6 +3599,17 @@
             admSection = key;
             persistCatalog();
             showToast("Dossier créé !");
+        }
+
+        function adminSetSectionMode(mode) {
+            const s = admCurSection();
+            delete s.waOnly; delete s.noId;
+            if (mode === 'wa') s.waOnly = true; else if (mode === 'login') s.noId = true;
+            persistCatalog();
+            const probe = { game: admGame, section: s.key };
+            const eff = productWaOnly(probe) ? 'wa' : productNoId(probe) ? 'login' : 'id';
+            if (eff === mode) showToast("Réglage enregistré.");
+            else showToast("Ce dossier a un réglage imposé par le site : ce choix ne peut pas être changé.", "error");
         }
 
         function adminRenameSection() {
