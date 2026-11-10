@@ -877,6 +877,17 @@
                         </div>
                     </div>
 
+                    <!-- État du crédit automatique Natcash -->
+                    <div data-role="admin,manager" class="bg-brand-dark/80 p-5 rounded-2xl border border-brand-cardBorder">
+                        <h3 class="font-rajdhani text-xl font-bold text-white mb-1 flex items-center gap-2">
+                            <i class="fa-solid fa-satellite-dish text-brand-yellow"></i> Crédit automatique Natcash
+                        </h3>
+                        <p class="text-xs text-gray-400 mb-3">Montre si les SMS Natcash arrivent bien sur le site. Les textes des SMS ne sont jamais conservés dans ce journal.</p>
+                        <button onclick="adminLoadSms(); playSound('click');" class="bg-brand-yellow text-black font-rajdhani font-bold px-4 py-2 rounded-lg text-sm mb-3"><i class="fa-solid fa-rotate-right mr-1"></i> Vérifier maintenant</button>
+                        <div id="sms-status-banner" class="hidden rounded-xl px-4 py-3 text-sm font-semibold mb-3"></div>
+                        <div id="sms-status-list" class="space-y-1 text-xs font-mono"></div>
+                    </div>
+
                     <!-- Sauvegarde et journal des actions -->
                     <div data-role="admin" class="bg-brand-dark/80 p-5 rounded-2xl border border-brand-cardBorder">
                         <h3 class="font-rajdhani text-xl font-bold text-white mb-1 flex items-center gap-2">
@@ -3929,6 +3940,39 @@
             if (!isAdminLoggedIn) return;
             resetsPulledAt = Date.now();
             if (await refreshState()) renderAdminResets();
+        }
+        const SMS_RESULTS = {
+            credited: ['Client crédité automatiquement', 'text-green-300'],
+            stored: ['SMS reçu · en attente du dépôt du client', 'text-sky-300'],
+            duplicate: ['SMS déjà reçu', 'text-gray-400'],
+            ignored: ['SMS reçu mais format non reconnu', 'text-amber-300'],
+            unauthorized: ['Appel refusé : clé secrète incorrecte', 'text-red-300'],
+            not_configured: ['Appel refusé : clé du site non configurée', 'text-red-300']
+        };
+        const smsAgo = ms => { const m = Math.max(0, Math.round(ms / 60000)); return m < 1 ? "à l'instant" : m < 60 ? `il y a ${m} min` : m < 1440 ? `il y a ${Math.round(m / 60)} h` : `il y a ${Math.round(m / 1440)} j`; };
+        async function adminLoadSms() {
+            const banner = document.getElementById('sms-status-banner'), list = document.getElementById('sms-status-list');
+            try {
+                const j = await srv('sms_status', {});
+                const last = j.entries[0];
+                let cls, text;
+                if (last && (last.result === 'unauthorized' || last.result === 'not_configured') && last.ts > j.lastOk) {
+                    cls = 'bg-red-900/40 text-red-300'; text = "Le téléphone contacte le site, mais la clé secrète est refusée. Vérifiez l'adresse et la clé dans l'application de transfert.";
+                } else if (last && last.result === 'ignored' && last.ts > j.lastOk) {
+                    cls = 'bg-amber-900/40 text-amber-300'; text = "Des SMS arrivent, mais leur format n'est pas reconnu : Natcash a peut-être changé son message.";
+                } else if (j.lastOk && j.now - j.lastOk < 86400000) {
+                    cls = 'bg-green-900/40 text-green-300'; text = `Dernier SMS Natcash reçu ${smsAgo(j.now - j.lastOk)}. Le transfert fonctionne.`;
+                } else {
+                    cls = 'bg-amber-900/40 text-amber-300'; text = j.lastOk ? `Aucun SMS reçu depuis ${smsAgo(j.now - j.lastOk).replace('il y a ', '')}. Vérifiez que l'application de transfert est active sur le téléphone (internet, économie de batterie désactivée).` : "Aucun SMS reçu ces 3 derniers jours. Vérifiez l'application de transfert sur le téléphone.";
+                }
+                banner.className = 'rounded-xl px-4 py-3 text-sm font-semibold mb-3 ' + cls;
+                banner.textContent = text;
+                list.innerHTML = j.entries.length ? j.entries.map(e => {
+                    const [label, color] = SMS_RESULTS[e.result] || [e.result, 'text-gray-300'];
+                    const more = e.amount ? ` · ${e.amount} G · …${e.tail || ''}` : (e.result === 'ignored' ? ` · Ou…ajoute:${e.hasOu ? 'oui' : 'non'} Transcode:${e.hasTranscode ? 'oui' : 'non'} HTG:${e.hasHTG ? 'oui' : 'non'}` : '');
+                    return `<div class="${color}">${escapeHtml(new Date(e.ts).toLocaleString('fr-FR'))} — ${escapeHtml(label)}${escapeHtml(more)}</div>`;
+                }).join('') : '<div class="text-gray-500">Aucun appel enregistré pour le moment.</div>';
+            } catch (err) { showToast(err.message, 'error'); }
         }
         const AUDIT_LABELS = { order_decide: 'Commande', deposit_decide: 'Dépôt Wallet', reset_decide: 'Mot de passe oublié', promo_write: 'Codes promo', data_write: 'Catalogue / prix', client_block: 'Blocage client', wallet_toggle: 'Wallet client', migrate: 'Migration', purge_legacy: 'Suppression anciennes données', backup_export: 'Sauvegarde', order_credentials: 'Consultation identifiants de jeu' };
         async function adminBackup() {
