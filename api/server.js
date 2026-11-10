@@ -463,19 +463,50 @@ async function tryAutoDeposit(dep) {
     return ok;
 }
 
+// Journal des appels reçus sur /api/sms (pour voir si le crédit automatique fonctionne). Ne garde jamais le texte du SMS.
+async function smsLog(result, extra, uniqueKey) {
+    try {
+        const now = Date.now();
+        const day = new Date(now).toISOString().slice(0, 10);
+        await db.put(`sec/smslog/${day}/${uniqueKey || now + '-' + rid().slice(0, 3)}`, { ts: now, result, ...(extra || {}) });
+    } catch (e) { console.error('smslog', e.message); }
+}
+
 // Appelé par /api/sms à l'arrivée d'un SMS de Natcash
 async function smsIngest(text) {
     const sms = parseNatcashSms(text);
-    if (!sms) return { ignored: true };
+    if (!sms) {
+        const t = String(text || '');
+        await smsLog('ignored', { len: t.length, hasOu: /\bOu\s+(te\s+ajoute|resevwa)\b/i.test(t), hasTranscode: /Transcode/i.test(t), hasHTG: /HTG/i.test(t) });
+        return { ignored: true };
+    }
     const key = txKey(sms.txid);
+    const tail = String(sms.txid).slice(-4);
     const rec = { txid: sms.txid, amount: sms.amount, ts: Date.now(), text: sms.text, used: false };
-    if (!(await db.create('sec/sms/' + key, rec))) return { duplicate: true };
+    if (!(await db.create('sec/sms/' + key, rec))) { await smsLog('duplicate', { amount: sms.amount, tail }); return { duplicate: true }; }
     const owner = await db.get('sec/txids/' + key);
     if (typeof owner === 'string' && owner.startsWith('deposit:')) {
         const dep = await db.get('sec/deposits/' + owner.slice(8));
-        if (dep && smsMatches(rec, dep.amount)) return { stored: true, credited: await tryAutoDeposit(dep) };
+        if (dep && smsMatches(rec, dep.amount)) {
+            const credited = await tryAutoDeposit(dep);
+            await smsLog(credited ? 'credited' : 'stored', { amount: sms.amount, tail });
+            return { stored: true, credited };
+        }
     }
+    await smsLog('stored', { amount: sms.amount, tail });
     return { stored: true, credited: false };
+}
+
+// État du crédit automatique pour l'espace admin
+async function smsStatus(ctx) {
+    needStaff(ctx, ['admin', 'manager']);
+    const days = [0, 1, 2].map(i => new Date(Date.now() - i * 86400000).toISOString().slice(0, 10));
+    const parts = await Promise.all(days.map(d => db.get('sec/smslog/' + d).catch(() => null)));
+    const all = [];
+    parts.forEach(p => { if (p) Object.values(p).forEach(v => all.push(v)); });
+    all.sort((a, b) => b.ts - a.ts);
+    const okTs = all.find(e => ['credited', 'stored', 'duplicate'].includes(e.result));
+    return { now: Date.now(), entries: all.slice(0, 40), lastOk: okTs ? okTs.ts : 0 };
 }
 
 async function depositCreate(ctx, req, b) {
@@ -892,6 +923,7 @@ module.exports = async (req, res) => {
             case 'migrate': out = await migrate(ctx); break;
             case 'purge_legacy': out = await purgeLegacy(ctx, b); break;
             case 'audit_list': out = await auditList(ctx); break;
+            case 'sms_status': out = await smsStatus(ctx); break;
             case 'order_credentials': out = await orderCredentials(ctx, b); break;
             case 'backup_export': out = await backupExport(ctx, b); break;
             case 'order_track': out = await orderTrack(req, b); break;
@@ -906,4 +938,5 @@ module.exports = async (req, res) => {
     }
 };
 module.exports.smsIngest = smsIngest;
+module.exports.smsLog = smsLog;
 module.exports.parseNatcashSms = parseNatcashSms;

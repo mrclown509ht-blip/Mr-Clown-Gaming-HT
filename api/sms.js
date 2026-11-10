@@ -26,7 +26,11 @@ module.exports = async (req, res) => {
         const out = await S.smsIngest(String(text).slice(0, 1000));
         res.status(200).send(JSON.stringify({ ok: true, ...out }));
     } catch (e) {
-        if (e instanceof L.HttpError) return res.status(e.status).send(JSON.stringify({ ok: false, error: e.code }));
+        if (e instanceof L.HttpError) {
+            // trace des appels refusés (au plus une ligne par minute) pour que l'admin voie le problème
+            if (e.code === 'unauthorized' || e.code === 'not_configured') await S.smsLog(e.code, {}, 'refus-' + Math.floor(Date.now() / 60000));
+            return res.status(e.status).send(JSON.stringify({ ok: false, error: e.code }));
+        }
         console.error('sms error', e);
         res.status(500).send(JSON.stringify({ ok: false, error: 'server' }));
     }
